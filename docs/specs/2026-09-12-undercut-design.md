@@ -244,7 +244,25 @@ is not a choice.
   list. Planning around a set spent in qualifying is how a strategy falls apart
   in the pit lane.
 
-## 15. Delivery
+## 15. Conditions at the start
+
+Every caller used to hardcode a dry start, so the wet-weather model — wets,
+intermediates, the crossover, wet qualifying — was only reachable if rain
+happened to fall mid-race.
+
+- **`startingWeather` is now optional**, and a weekend left to itself rolls the
+  conditions from its seed and the circuit's volatility.
+- **It is a pure function of seed and track**, not a value one session passes to
+  the other, so qualifying and the race agree without being coupled.
+- **Balance runs stay explicitly dry.** Rain is the loudest source of variance
+  in a race, and a balance report should be about the cars.
+- **Nobody starts a wet race on slicks.** Cars knocked out before the final
+  qualifying segment are not tied to a tyre and fell back to the compound the
+  entry list happened to name, which is mediums. A car is now fitted for the
+  conditions unless its entry already suits them, and the set it starts on comes
+  out of its weekend allocation like any other.
+
+## 16. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

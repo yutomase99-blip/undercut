@@ -219,7 +219,11 @@ export interface RaceConfig {
   track: Track;
   regulations: Regulations;
   entries: Entry[];
-  startingWeather: WeatherState;
+  /**
+   * Conditions at the start. Left out, the weekend decides for itself from the
+   * seed and the circuit.
+   */
+  startingWeather?: WeatherState;
   /** The car the player calls strategy for. AI handles every other car. */
   playerCarId?: CarId | null;
   /**

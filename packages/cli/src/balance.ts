@@ -20,6 +20,8 @@ for (const track of TRACKS) {
         track,
         regulations: openWheelOverLaps(track.defaultLaps),
         entries: defaultGrid(),
+        // Balance is measured in the dry on purpose: rain is the loudest source
+        // of variance in a race, and a balance report should be about the cars.
         startingWeather: 'dry',
       },
       `balance-${track.id}-${i}`,

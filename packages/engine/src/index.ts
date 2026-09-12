@@ -20,7 +20,27 @@ export { computeLapTime, FUEL_MS_PER_KG } from './core/lapTime.ts';
 export { tyreDeltaMs, tyreConditionPct } from './core/tyres.ts';
 export { overtakeChance } from './core/overtake.ts';
 export { pitStopMs, totalPitLossMs, MIN_STATIONARY_MS } from './core/pit.ts';
-export { stepWeather, suitableCompounds } from './core/weather.ts';
+export {
+  stepWeather,
+  suitableCompounds,
+  rollStartingWeather,
+  rollWeatherTimeline,
+  forecastFrom,
+  confidenceAt,
+  forecastAccuracy,
+  forecastLookaheadFor,
+  forecastTrustFor,
+  FORECAST_HORIZON,
+  type ForecastEntry,
+} from './core/weather.ts';
+export {
+  allocationFor,
+  availableCompound,
+  countSets,
+  hasSet,
+  takeSet,
+  type TyreAllocation,
+} from './core/allocation.ts';
 export { hashEvents } from './replay/hash.ts';
 export { createStreams, STREAM_NAMES, type Rng, type Streams } from './rng/streams.ts';
 export { decideStrategy, plannedStint } from './ai/strategist.ts';

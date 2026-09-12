@@ -184,7 +184,7 @@ export function raceConfigFor(season: SeasonState, playerCarId?: string | null):
     track: trackById(round.trackId),
     regulations,
     entries: season.entries,
-    startingWeather: 'dry',
+    // Each round decides its own conditions from that round's seed.
     playerCarId: playerCarId ?? null,
     roster: { teams },
   };

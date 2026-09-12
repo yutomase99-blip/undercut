@@ -20,7 +20,6 @@ const result = simulate(
     track,
     regulations: enduranceOverHours(hours),
     entries: enduranceGrid(),
-    startingWeather: 'dry',
   },
   seed,
 );

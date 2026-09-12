@@ -218,7 +218,8 @@ function startSingleRace(): void {
     track: trackById(setup.trackId),
     regulations: series.regulations(setup.length),
     entries: series.grid(),
-    startingWeather: 'dry' as const,
+    // Conditions are left to the weekend: the seed and the circuit decide, so a
+    // wet Sunday is something the game can hand you.
     playerCarId,
   };
 

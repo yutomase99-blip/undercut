@@ -11,7 +11,7 @@ import { driverById, teamById } from '../content/registry.ts';
 import { createStreams, type Rng, type Streams } from '../rng/streams.ts';
 import { allocationFor, availableCompound, takeSet, type TyreAllocation } from './allocation.ts';
 import { computeLapTime } from './lapTime.ts';
-import { suitableCompounds } from './weather.ts';
+import { rollStartingWeather, suitableCompounds } from './weather.ts';
 
 /** Fuel carried on a qualifying run: as little as the rules allow. */
 const QUALIFYING_FUEL_KG = 12;
@@ -86,6 +86,8 @@ export interface Qualifying {
   yellowChanceAt(slot: number): number;
   /** What a car still has in the garage. */
   allocationOf(carId: CarId): TyreAllocation;
+  /** The conditions this session is being run in. */
+  conditions(): WeatherState;
 }
 
 export function createQualifying(config: RaceConfig, seed: string): Qualifying {
@@ -100,7 +102,9 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
   const resolveDriver = (id: string): Driver => driverOverrides.get(id) ?? driverById(id);
 
   const classes = new Map(regulations.classes.map((c) => [c.id, c]));
-  const weather: WeatherState = config.startingWeather;
+  // Resolved the same way the race resolves it, so both sessions of a weekend
+  // agree about the conditions without either being told.
+  const weather: WeatherState = config.startingWeather ?? rollStartingWeather(track, seed);
   const allowed = suitableCompounds(weather).filter((c) =>
     regulations.tyreRules.allowedCompounds.includes(c),
   );
@@ -303,6 +307,7 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
     forecast,
     yellowChanceAt,
     allocationOf: (carId) => ({ ...(allocations.get(carId) ?? allocationFor(regulations)) }),
+    conditions: () => weather,
   };
 }
 
