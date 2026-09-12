@@ -6,7 +6,6 @@ import type {
   PaceMode,
   Team,
   Track,
-  WeatherState,
 } from '../types.ts';
 import type { Rng } from '../rng/streams.ts';
 import { tyreDeltaMs } from './tyres.ts';
@@ -37,7 +36,8 @@ export interface LapTimeInput {
   tyreAgeLaps: number;
   fuelKg: number;
   paceMode: PaceMode;
-  weather: WeatherState;
+  /** How wet the track surface is, 0 to 1. */
+  wetness: number;
   /** Time lost behind another car this lap, decided by the race loop. */
   trafficMs: number;
   /**
@@ -62,7 +62,7 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
   const tyreMs = tyreDeltaMs(
     input.compound,
     input.tyreAgeLaps,
-    input.weather,
+    input.wetness,
     input.track.tyreWearFactor,
   );
   const fuelMs = input.fuelKg * FUEL_MS_PER_KG;

@@ -654,6 +654,9 @@ function renderRace(options: RaceOptions): void {
       return;
     }
 
+    const surface = Math.round(state.wetness * 100);
+    forecastLabel.textContent = surface === 0 ? 'Forecast' : `Forecast · track ${surface}% wet`;
+
     const change = entries.find((entry) => entry.state !== state.weather);
     if (change) {
       const laps = change.lap - state.lap;

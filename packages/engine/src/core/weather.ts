@@ -113,13 +113,18 @@ export function forecastAccuracy(team: { pitCrewSkill: number }): number {
 /**
  * How many laps ahead a team will actually commit to a call.
  *
- * The value of a forecast is a lap or two of anticipation, not six: fitting wet
- * tyres five laps before the rain arrives loses far more than it saves. The
- * best-run teams move a lap or two early; the worst wait until it is raining.
+ * One lap, for the teams good enough to manage it, and nobody else.
+ *
+ * This was three, and it was badly wrong. Wet tyres on a dry track cost the
+ * better part of seven seconds a lap, so a team that fits them three laps early
+ * throws away twenty seconds to save a handful — which meant the best-run teams
+ * were punished for their own foresight and the cars that ignored the forecast
+ * won. Across 300 races it took the bottom four teams from 0.3% of wins to
+ * 11.7%, and it was the balance suite, not the racing, that eventually said so.
  */
 export function forecastLookaheadFor(team: { pitCrewSkill: number }): number {
   const quality = Math.max(0, Math.min(1, (team.pitCrewSkill - 0.65) / 0.3));
-  return 1 + Math.round(quality * 2);
+  return quality >= 0.55 ? 1 : 0;
 }
 
 /**
@@ -156,4 +161,26 @@ export function rollStartingWeather(
   if (roll < wetChance) return 'wet';
   if (roll < wetChance + dampChance) return 'damp';
   return 'dry';
+}
+
+/**
+ * How wet the track is in each of the three named conditions.
+ *
+ * The state machine still decides what the sky is doing; wetness is what the
+ * track surface has actually become, and it lags behind. That lag is the whole
+ * point: it is what creates a crossover window rather than a moment where every
+ * car needs different tyres at once.
+ */
+export const WETNESS_FOR: Record<WeatherState, number> = { dry: 0, damp: 0.5, wet: 1 };
+
+/** Rain soaks a track faster than sun dries it. */
+export const WETTING_RATE = 0.34;
+export const DRYING_RATE = 0.11;
+
+/** Moves the surface one lap closer to what the sky is doing. */
+export function stepWetness(wetness: number, weather: WeatherState): number {
+  const target = WETNESS_FOR[weather];
+  const rate = target > wetness ? WETTING_RATE : DRYING_RATE;
+  if (Math.abs(target - wetness) <= rate) return target;
+  return Math.max(0, Math.min(1, wetness + Math.sign(target - wetness) * rate));
 }

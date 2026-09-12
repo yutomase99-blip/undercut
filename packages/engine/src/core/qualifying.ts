@@ -11,7 +11,7 @@ import { driverById, teamById } from '../content/registry.ts';
 import { createStreams, type Rng, type Streams } from '../rng/streams.ts';
 import { allocationFor, availableCompound, takeSet, type TyreAllocation } from './allocation.ts';
 import { computeLapTime } from './lapTime.ts';
-import { rollStartingWeather, suitableCompounds } from './weather.ts';
+import { rollStartingWeather, suitableCompounds, WETNESS_FOR } from './weather.ts';
 
 /** Fuel carried on a qualifying run: as little as the rules allow. */
 const QUALIFYING_FUEL_KG = 12;
@@ -172,7 +172,9 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
       tyreAgeLaps: TYRE_AGE_LAPS,
       fuelKg: QUALIFYING_FUEL_KG,
       paceMode: 'push',
-      weather,
+      // A qualifying session is short: the surface is whatever the conditions
+      // have already made it, rather than something that evolves during it.
+      wetness: WETNESS_FOR[weather],
       trafficMs: trafficMsFor(carsInSlot),
       surfaceMs: surfaceMsAt(run.slot),
       rng: streams.qualifying,

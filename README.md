@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 198 tests, including a statistical balance suite
+npm test           # 213 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -151,6 +151,18 @@ wet in one weekend in five.
 Qualifying and the race reach the same conclusion independently, because the
 conditions are a pure function of the seed and the track rather than something
 one session tells the other.
+
+## A drying track
+
+The sky changes at once; the track takes its time catching up. Rain soaks a
+surface in three laps and the sun takes nine to dry it, and a compound's three
+weather figures are anchors that everything in between is interpolated across.
+
+That lag is the point. Somewhere around 54% wet, intermediates and slicks are
+worth the same lap time — so a drying track gives you several laps where nobody
+is sure yet, the cars that gambled early are hanging on, and the ones that
+waited are catching up. Snapping between three discrete states skipped that
+entirely, which was the most interesting part of a wet race.
 
 ## The forecast
 

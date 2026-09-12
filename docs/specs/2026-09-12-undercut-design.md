@@ -262,7 +262,49 @@ happened to fall mid-race.
   conditions unless its entry already suits them, and the set it starts on comes
   out of its weekend allocation like any other.
 
-## 16. Delivery
+## 16. A drying track, and a balance regression it uncovered
+
+The weather state machine still decides what the sky is doing, but the track
+surface now lags behind it on a continuous 0..1 wetness, and a compound's three
+weather figures became anchors interpolated across. Around 54% wet, slicks and
+intermediates are worth the same lap time, which is the window the discrete
+model had no way to represent.
+
+Building it surfaced a balance regression already merged and already shipped.
+
+**What had happened.** The commit that gave every team its own forecast took the
+bottom four teams from 0.3% of wins to 11.7%, and the top three from 96.3% to
+61.3%. The balance suite did not fail, because 11.7% sat a hair under its 12%
+bar and 61.3% a hair over its 60% one.
+
+**Why.** Teams were allowed to commit to a forecast up to three laps early. Wet
+tyres on a dry track cost the better part of seven seconds a lap, so a team
+fitting them three laps early threw away twenty seconds to save a handful. The
+best-run teams were being punished for their foresight, and the cars that
+ignored the forecast won. Anticipation is now one lap, for the teams good enough
+to manage it, and nobody else.
+
+**What it also exposed.** A gradient measured after that change — the best team
+fitting wets 2.8 laps before the rain — was read as evidence the feature worked.
+It was evidence of the bug. Measuring when teams acted said nothing about what
+acting cost them.
+
+Two further clustering faults came out of the same investigation:
+
+- The compulsory compound change fired at an identical `lapsRemaining` for every
+  car, so the whole field served it together. Each pit wall now leaves itself a
+  different amount of room.
+- A caution stop was judged against a fixed lap count, so a safety car seven
+  laps from the flag sent nineteen of twenty cars down the pit lane for tyres
+  that could never pay for themselves. The stop is now judged against the stint
+  the car is actually on.
+
+The clustering test was rescoped to green-flag running. A safety car genuinely
+does send most of a field into the pits at once; counting those laps measured
+the safety car rather than the forecast, which is what the test was written to
+watch.
+
+## 17. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

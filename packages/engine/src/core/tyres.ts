@@ -1,7 +1,22 @@
-import type { Compound, WeatherState } from '../types.ts';
+import type { Compound } from '../types.ts';
 
 /** Time lost on a completely cold tyre, fading to zero once it is up to temperature. */
 export const WARMUP_PENALTY_MS = 900;
+
+/**
+ * How much this compound suffers on a track of a given wetness.
+ *
+ * The three figures a compound carries are anchors at a dry, damp and soaked
+ * track; everything between them is interpolated. Without that, a drying track
+ * would snap from one set of right answers to another, and the most interesting
+ * few laps of a wet race — the ones where nobody is sure yet — would not exist.
+ */
+function weatherPenaltyAt(compound: Compound, wetness: number): number {
+  const clamped = Math.max(0, Math.min(1, wetness));
+  const { dry, damp, wet } = compound.weatherPenaltyMs;
+  if (clamped <= 0.5) return dry + (damp - dry) * (clamped / 0.5);
+  return damp + (wet - damp) * ((clamped - 0.5) / 0.5);
+}
 
 /**
  * Time a tyre costs relative to the reference lap.
@@ -13,7 +28,7 @@ export const WARMUP_PENALTY_MS = 900;
 export function tyreDeltaMs(
   compound: Compound,
   ageLaps: number,
-  weather: WeatherState,
+  wetness: number,
   wearFactor: number,
 ): number {
   const warmup =
@@ -29,7 +44,7 @@ export function tyreDeltaMs(
       afterCliff * compound.degPerLapMs * compound.cliffFactor) *
     wearFactor;
 
-  return compound.baseOffsetMs + warmup + degradation + compound.weatherPenaltyMs[weather];
+  return compound.baseOffsetMs + warmup + degradation + weatherPenaltyAt(compound, wetness);
 }
 
 /** Display-only tyre life. The model itself always works from age. */
