@@ -12,6 +12,17 @@ export function gap(ms: number): string {
   return `+${(ms / 1000).toFixed(3)}`;
 }
 
+/**
+ * A gap on the timing tower, for a car that is not leading.
+ *
+ * Never the word "leader": on the formation lap every gap is genuinely zero,
+ * and labelling twenty cars as the leader is not a rounding problem, it is a
+ * lie about who is winning.
+ */
+export function towerGap(ms: number): string {
+  return `+${(Math.max(0, ms) / 1000).toFixed(3)}`;
+}
+
 export function shortGap(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }

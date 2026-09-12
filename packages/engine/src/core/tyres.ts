@@ -47,9 +47,36 @@ export function tyreDeltaMs(
   return compound.baseOffsetMs + warmup + degradation + weatherPenaltyAt(compound, wetness);
 }
 
+/**
+ * How many laps there are in a set before there is nothing left of it.
+ *
+ * Past this the tyre is not merely slow, it is finished: the carcass is going
+ * and it is a question of when, not whether.
+ */
+export function usableLifeLaps(compound: Compound, wearFactor: number): number {
+  return (compound.warmupLaps + compound.cliffLap * 1.7) / wearFactor;
+}
+
 /** Display-only tyre life. The model itself always works from age. */
 export function tyreConditionPct(compound: Compound, ageLaps: number, wearFactor: number): number {
-  const usableLife = (compound.warmupLaps + compound.cliffLap * 1.7) / wearFactor;
-  const pct = 100 * (1 - ageLaps / usableLife);
+  const pct = 100 * (1 - ageLaps / usableLifeLaps(compound, wearFactor));
   return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+/**
+ * Chance per lap that a tyre run past its life simply lets go.
+ *
+ * Without this a set could be run indefinitely: forty-five minutes of endurance
+ * racing on softs cost six and a half seconds a lap and nothing else, so the
+ * only thing stopping it was arithmetic. A tyre needs an end, not just a
+ * gradient.
+ */
+export function tyreFailureChance(
+  compound: Compound,
+  ageLaps: number,
+  wearFactor: number,
+): number {
+  const over = ageLaps - usableLifeLaps(compound, wearFactor);
+  if (over <= 0) return 0;
+  return Math.min(0.4, 0.025 * over);
 }

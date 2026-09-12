@@ -17,7 +17,7 @@ export {
   type QualifyingState,
 } from './core/qualifying.ts';
 export { computeLapTime, FUEL_MS_PER_KG } from './core/lapTime.ts';
-export { tyreDeltaMs, tyreConditionPct } from './core/tyres.ts';
+export { tyreDeltaMs, tyreConditionPct, tyreFailureChance, usableLifeLaps } from './core/tyres.ts';
 export { overtakeChance } from './core/overtake.ts';
 export { pitStopMs, totalPitLossMs, MIN_STATIONARY_MS } from './core/pit.ts';
 export {
