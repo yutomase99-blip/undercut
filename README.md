@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 213 tests, including a statistical balance suite
+npm test           # 234 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -151,6 +151,23 @@ wet in one weekend in five.
 Qualifying and the race reach the same conclusion independently, because the
 conditions are a pure function of the seed and the track rather than something
 one session tells the other.
+
+## The setup
+
+Every weekend opens in the garage with one decision: how much wing to run.
+
+Each circuit has an amount it wants — Aurora Bay, tight and walled in, asks for
+77%; Nordsee Speedway, all long straights, asks for 38%. Run more or less than
+that and you give up lap time, quadratically, in either direction.
+
+But less wing is kinder on the tyres, lighter on fuel, and quicker where passes
+actually happen. So stripping the car is a real option on a circuit where you
+expect to spend the race in traffic — it just isn't a free one. Over 40 races at
+Kestrel Park, a car on the circuit's optimum averages P3.7; the same car
+stripped bare averages P10.7.
+
+You are never told the optimum. Your engineers offer a reading, and it is
+exactly as good as your team is — the same bargain the weather forecast makes.
 
 ## A drying track
 

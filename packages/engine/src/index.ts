@@ -41,6 +41,14 @@ export {
   takeSet,
   type TyreAllocation,
 } from './core/allocation.ts';
+export {
+  DOWNFORCE_RANGE,
+  fuelFactorFor,
+  overtakeShiftFor,
+  setupPenaltyMs,
+  suggestedDownforce,
+  tyreLoadFor,
+} from './core/setup.ts';
 export { hashEvents } from './replay/hash.ts';
 export { createStreams, STREAM_NAMES, type Rng, type Streams } from './rng/streams.ts';
 export { decideStrategy, plannedStint } from './ai/strategist.ts';

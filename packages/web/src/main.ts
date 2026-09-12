@@ -18,6 +18,7 @@ import { clock, COMPOUND_LOOK, gap, lapTime, WEATHER_LABEL } from './format.ts';
 import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './championship.ts';
 import { renderSeasonHub, renderSeasonSetup, type SeasonDeps } from './seasonUi.ts';
 import { renderQualifying } from './qualifyingUi.ts';
+import { renderCarSetup } from './setupUi.ts';
 import {
   isSeasonComplete,
   loadSeason,
@@ -223,26 +224,41 @@ function startSingleRace(): void {
     playerCarId,
   };
 
-  renderQualifying({
+  renderCarSetup({
     app,
-    config,
+    track: config.track,
+    teamId: setup.teamId,
     seed: setup.seed,
-    playerCarId,
-    onComplete: (qualifying) =>
-      renderRace({
-        config: {
-          ...config,
-          entries: applyQualifyingTyres(config.entries, qualifying),
-          startingGrid: qualifying.grid,
-          tyreSets: qualifying.allocations,
-        },
+    onConfirm: (downforce) =>
+      renderQualifying({
+        app,
+        config: { ...config, entries: withPlayerSetup(config.entries, playerCarId, downforce) },
         seed: setup.seed,
         playerCarId,
-        multiClass: series.multiClass,
-        onFinish: () => renderSetup(),
-        finishLabel: 'Another race',
+        onComplete: (qualifying) =>
+          renderRace({
+            config: {
+              ...config,
+              entries: applyQualifyingTyres(
+                withPlayerSetup(config.entries, playerCarId, downforce),
+                qualifying,
+              ),
+              startingGrid: qualifying.grid,
+              tyreSets: qualifying.allocations,
+            },
+            seed: setup.seed,
+            playerCarId,
+            multiClass: series.multiClass,
+            onFinish: () => renderSetup(),
+            finishLabel: 'Another race',
+          }),
       }),
   });
+}
+
+/** Puts the player's chosen wing level on their own car, and nobody else's. */
+function withPlayerSetup(entries: Entry[], playerCarId: string, downforce: number): Entry[] {
+  return entries.map((entry) => (entry.carId === playerCarId ? { ...entry, downforce } : entry));
 }
 
 /* ------------------------------------------------------------------- race */
@@ -901,11 +917,17 @@ function startSeasonRound(season: SeasonState): void {
   const series = CHAMPIONSHIPS.find((c) => c.id === season.config.championshipId)!;
   const config = raceConfigFor(season, playerCarId);
 
+  let playerDownforce: number | null = null;
+  const entriesWithSetup = () =>
+    playerDownforce === null
+      ? config.entries
+      : withPlayerSetup(config.entries, playerCarId, playerDownforce);
+
   const toRace = (qualifying: QualifyingResult) =>
     renderRace({
       config: {
         ...config,
-        entries: applyQualifyingTyres(config.entries, qualifying),
+        entries: applyQualifyingTyres(entriesWithSetup(), qualifying),
         startingGrid: qualifying.grid,
         tyreSets: qualifying.allocations,
       },
@@ -926,13 +948,23 @@ function startSeasonRound(season: SeasonState): void {
       },
     });
 
-  renderQualifying({
+  renderCarSetup({
     app,
-    config,
+    track: config.track,
+    teamId: season.config.playerTeamId,
     seed,
-    playerCarId,
     subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
-    onComplete: toRace,
+    onConfirm: (downforce) => {
+      playerDownforce = downforce;
+      renderQualifying({
+        app,
+        config: { ...config, entries: entriesWithSetup() },
+        seed,
+        playerCarId,
+        subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
+        onComplete: toRace,
+      });
+    },
   });
 }
 

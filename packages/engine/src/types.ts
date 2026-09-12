@@ -54,6 +54,11 @@ export interface Track {
   /** 0 = stable, 1 = wildly changeable. */
   weatherVolatility: number;
   defaultLaps: number;
+  /**
+   * How much wing this circuit wants, 0 to 1. Twisty places reward it; places
+   * with long straights punish it.
+   */
+  idealDownforce: number;
   /** Closed loop describing the circuit for the map view. */
   layout: LayoutPoint[];
 }
@@ -99,6 +104,8 @@ export interface Entry {
   driverIds?: DriverId[];
   classId: ClassId;
   startingCompound: CompoundId;
+  /** Wing level for the weekend. Left out, the team's engineers decide. */
+  downforce?: number;
 }
 
 export interface LapBreakdown {
@@ -112,6 +119,8 @@ export interface LapBreakdown {
   paceMs: number;
   /** Track surface state: negative once rubber has gone down. */
   surfaceMs: number;
+  /** Time given up by running the wrong amount of wing for this circuit. */
+  setupMs: number;
   errorMs: number;
   totalMs: number;
 }
@@ -127,6 +136,8 @@ export interface CarState {
   lastLapMs: number;
   bestLapMs: number;
   compound: CompoundId;
+  /** Wing level this car is running. */
+  downforce: number;
   tyreAgeLaps: number;
   /** 100 = fresh, 0 = destroyed. Display only; the model uses age. */
   tyreConditionPct: number;
