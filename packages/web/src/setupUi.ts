@@ -7,6 +7,7 @@ import {
   type Track,
 } from '@undercut/engine';
 import { el } from './dom.ts';
+import { driverCard } from './driverCard.ts';
 
 export interface CarSetupOptions {
   app: HTMLElement;
@@ -14,6 +15,8 @@ export interface CarSetupOptions {
   teamId: string;
   seed: string;
   subtitle?: string;
+  /** The driver this setup is being built around. */
+  driverId?: string;
   onConfirm: (downforce: number) => void;
 }
 
@@ -52,6 +55,13 @@ export function renderCarSetup(options: CarSetupOptions): void {
         `${options.track.name} wants a certain amount of wing, and your engineers have a view on how much. Run more than the circuit wants and you give up lap time; run less and you give up lap time too — but you will be kinder on the tyres, lighter on fuel, and harder to pass.`,
       ),
     );
+
+    if (options.driverId) {
+      const who = el('div', 'panel quali__panel');
+      who.append(el('span', 'eyebrow', 'In the car'));
+      who.append(driverCard(options.driverId, { compact: true }));
+      page.append(who);
+    }
 
     const panel = el('div', 'panel quali__panel');
     panel.append(el('span', 'eyebrow', 'Wing level'));

@@ -336,7 +336,36 @@ Warnings and penalties are stated by the engine as facts, without radio calls.
 Twenty cars running wide would drown the team radio in other people's business,
 so the interface decides which of them its own driver hears about.
 
-## 18. Delivery
+## 18. What playing it said
+
+Four things came back from someone actually sitting down with it, none of which
+any test had suggested.
+
+**It went far too fast.** A lap lasted 1.6 seconds and the timing tower only
+redrew once a lap, so a gap jumped from 1.8s to 0.9s with nothing in between: a
+battle never happened on screen, it turned up already over. A lap now takes six
+seconds, there is a 0.5x, and the tower is animated so gaps ease between laps.
+Rows where somebody is closing are marked — being near the car ahead is not a
+battle, and on the opening laps the whole field is within a second.
+
+**Tyres had no end.** Forty-five minutes of endurance racing on one set of softs
+was possible, because past the cliff a set cost time and nothing else. A set now
+has a life, and past it a rising chance per lap of letting go. The cliffs are
+steeper.
+
+**Drivers were invisible.** Three numbers per driver decided every result and
+none were ever shown.
+
+**The car was one number.** "Car performance" went up when money was spent on
+it, which is a spreadsheet rather than a car. It is now five parts with a
+quality and a condition, and the budget has somewhere to go and something to
+trade.
+
+The parts model needed exactly one thing from the engine — a per-team tyre wear
+multiplier — because the roster override added for the season layer already
+carried everything else. That seam has now paid for itself twice.
+
+## 19. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

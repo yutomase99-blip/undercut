@@ -19,6 +19,7 @@ import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './cha
 import { renderSeasonHub, renderSeasonSetup, type SeasonDeps } from './seasonUi.ts';
 import { renderQualifying } from './qualifyingUi.ts';
 import { renderCarSetup } from './setupUi.ts';
+import { driverCard, driversFor } from './driverCard.ts';
 import {
   isSeasonComplete,
   loadSeason,
@@ -192,7 +193,17 @@ function renderSetup(): void {
     seedRow,
   );
 
-  grid.append(seriesField, trackField, teamField, raceField);
+  // Who you are actually racing with. The car was always on screen; the people
+  // driving it were not.
+  const lineupField = el('div', 'field');
+  lineupField.append(el('span', 'eyebrow', 'Your drivers'));
+  const lineup = el('div', 'lineup');
+  for (const driverId of driversFor(series.grid(), setup.teamId)) {
+    lineup.append(driverCard(driverId));
+  }
+  lineupField.append(lineup);
+
+  grid.append(seriesField, trackField, teamField, raceField, lineupField);
 
   const start = el('button', 'start', 'Go racing');
   start.type = 'button';
@@ -238,6 +249,7 @@ function startSingleRace(): void {
     track: config.track,
     teamId: setup.teamId,
     seed: setup.seed,
+    driverId: config.entries.find((e) => e.carId === playerCarId)?.driverId,
     onConfirm: (downforce) =>
       renderQualifying({
         app,
@@ -1100,6 +1112,7 @@ function startSeasonRound(season: SeasonState): void {
     track: config.track,
     teamId: season.config.playerTeamId,
     seed,
+    driverId: config.entries.find((e) => e.carId === playerCarId)?.driverId,
     subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
     onConfirm: (downforce) => {
       playerDownforce = downforce;

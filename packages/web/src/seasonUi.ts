@@ -1,6 +1,6 @@
 import { driverById, teamById, trackById, TRACKS } from '@undercut/engine';
 import {
-  applyUpgrade,
+  applyGarageOption,
   autoPick,
   createSeason,
   driverStandings,
@@ -10,13 +10,16 @@ import {
   pickDriver,
   saveSeason,
   startNextSeason,
+  garageOptions,
+  PART_LABEL,
+  PART_IDS,
   teamStandings,
-  upgradeOptions,
   type MarketState,
   type SeasonConfig,
   type SeasonState,
 } from '@undercut/season';
 import { el } from './dom.ts';
+import { driverCard, driversFor } from './driverCard.ts';
 import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './championship.ts';
 
 /**
@@ -253,32 +256,59 @@ export function renderSeasonHub(season: SeasonState, deps: SeasonDeps): void {
   const devPanel = el('div', 'panel hub__panel');
   const devHead = el('div', 'hub__head');
   devHead.append(
-    el('span', 'eyebrow', 'Development'),
+    el('span', 'eyebrow', 'The garage'),
     el('span', 'hub__budget mono', `${development.budget} left`),
   );
   devPanel.append(devHead);
+
+  // The car, component by component: how good each part is, and how much life
+  // is left in it.
+  const partsTable = el('div', 'parts');
+  for (const id of PART_IDS) {
+    const part = development.parts[id];
+    const row = el('div', 'part');
+    const conditionColour =
+      part.condition > 0.6 ? 'var(--green)' : part.condition > 0.3 ? 'var(--amber)' : 'var(--red)';
+    row.innerHTML = `
+      <span class="part__name">${PART_LABEL[id]}</span>
+      <span class="part__meter" title="Quality ${Math.round(part.level * 100)}">
+        <span style="width:${Math.round(part.level * 100)}%;background:var(--text)"></span>
+      </span>
+      <span class="part__value mono">${Math.round(part.level * 100)}</span>
+      <span class="part__meter" title="Condition ${Math.round(part.condition * 100)}%">
+        <span style="width:${Math.round(part.condition * 100)}%;background:${conditionColour}"></span>
+      </span>
+      <span class="part__value mono" style="color:${conditionColour}">${Math.round(part.condition * 100)}%</span>`;
+    partsTable.append(row);
+  }
+  devPanel.append(partsTable);
   devPanel.append(
     el(
       'p',
-      'hub__note',
-      'A weaker car gains more from the same work than a strong one, and everyone else is spending too.',
+      'hub__note hub__note--dim',
+      'Quality on the left, condition on the right. Racing wears a car out, and a tired part is not the part you bought.',
     ),
   );
 
   const options = el('div', 'upgrades');
-  for (const option of upgradeOptions(development)) {
+  for (const option of garageOptions(development).filter((o) => o.worthwhile)) {
     const button = el('button', 'upgrade');
     button.type = 'button';
-    button.disabled = !option.affordable || season.round === 0 ? !option.affordable : false;
+    button.disabled = !option.affordable;
+    button.title = option.description;
+    const gainText =
+      option.action === 'upgrade'
+        ? `+${(option.gain * 100).toFixed(1)}`
+        : `+${Math.round(option.gain * 100)}%`;
     button.innerHTML = `
       <span class="upgrade__label">${option.label}</span>
-      <span class="upgrade__gain mono">+${(option.gain * 100).toFixed(1)}</span>
+      <span class="upgrade__gain mono">${gainText}</span>
       <span class="upgrade__cost mono">${option.cost}</span>`;
     button.addEventListener('click', () => {
       const updated: SeasonState = {
         ...season,
         teams: season.teams.map((t) =>
-          t.teamId === development.teamId ? applyUpgrade(t, option) : t,
+          t.teamId === development.teamId ? applyGarageOption(t, option) : t,
         ),
       };
       saveSeason(updated);
@@ -287,16 +317,18 @@ export function renderSeasonHub(season: SeasonState, deps: SeasonDeps): void {
     options.append(button);
   }
   devPanel.append(options);
-  devPanel.append(
-    el(
-      'p',
-      'hub__note hub__note--dim',
-      `Car ${(development.carPerformance * 100).toFixed(1)} · Reliability ${(development.reliability * 100).toFixed(1)} · Crew ${(development.pitCrewSkill * 100).toFixed(1)}`,
-    ),
-  );
   left.append(devPanel);
 
   /* standings */
+  const lineupPanel = el('div', 'panel hub__panel');
+  lineupPanel.append(el('span', 'eyebrow', 'Your drivers'));
+  const lineup = el('div', 'lineup');
+  for (const driverId of driversFor(season.entries, season.config.playerTeamId)) {
+    lineup.append(driverCard(driverId, { compact: true }));
+  }
+  lineupPanel.append(lineup);
+  left.append(lineupPanel);
+
   const right = el('div', 'hub__col');
   right.append(standingsPanel(season, series));
   right.append(calendarPanel(season));

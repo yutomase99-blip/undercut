@@ -730,7 +730,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
       }
 
       const wearMultiplier =
-        (underCaution ? 0.3 : PACE_WEAR_FACTOR[car.paceMode]) * tyreLoadFor(car.downforce);
+        (underCaution ? 0.3 : PACE_WEAR_FACTOR[car.paceMode]) *
+        tyreLoadFor(car.downforce) *
+        (car.team.tyreWear ?? 1);
       car.tyreAgeLaps += wearMultiplier + (extraWear.get(car.id) ?? 0);
 
       const fuelMultiplier =

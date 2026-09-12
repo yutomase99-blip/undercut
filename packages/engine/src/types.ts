@@ -84,6 +84,12 @@ export interface Team {
   pitCrewSkill: number;
   /** 1 is bulletproof. */
   reliability: number;
+  /**
+   * How hard this car is on its tyres, against a neutral 1.
+   *
+   * Some cars simply eat rubber. Left out, the car is average.
+   */
+  tyreWear?: number;
 }
 
 /** A performance bracket. Open-wheel racing has one; endurance has several. */
