@@ -137,9 +137,16 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
   const classes = new Map(regulations.classes.map((c) => [c.id, c]));
 
+  // Per-race roster wins over the registered content, so a developed car races
+  // as it is today without anything being written back to the catalogue.
+  const teamOverrides = new Map((config.roster?.teams ?? []).map((t) => [t.id, t]));
+  const driverOverrides = new Map((config.roster?.drivers ?? []).map((d) => [d.id, d]));
+  const resolveTeam = (id: string) => teamOverrides.get(id) ?? teamById(id);
+  const resolveDriver = (id: string) => driverOverrides.get(id) ?? driverById(id);
+
   const cars: CarRuntime[] = config.entries.map((entry) => {
-    const team = teamById(entry.teamId);
-    const driver = driverById(entry.driverId);
+    const team = resolveTeam(entry.teamId);
+    const driver = resolveDriver(entry.driverId);
     const carClass = classes.get(entry.classId) ?? regulations.classes[0];
     if (!carClass) throw new Error('Regulations declare no classes');
     const roster = entry.driverIds && entry.driverIds.length > 0 ? entry.driverIds : [entry.driverId];
@@ -590,7 +597,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
           car.rosterIndex = (car.rosterIndex + 1) % car.roster.length;
           const to = car.roster[car.rosterIndex]!;
           car.driverId = to;
-          car.driver = driverById(to);
+          car.driver = resolveDriver(to);
           car.driversUsed.push(to);
           car.stintSeconds = 0;
           events.push({ lap, type: 'driverChange', car: car.id, from, to });

@@ -7,11 +7,24 @@ import {
   TRACKS,
   type CompoundId,
   type Race,
+  type RaceConfig,
   type RaceEvent,
+  type RaceResult,
 } from '@undercut/engine';
 import { createTrackMap, type MapCar } from './trackMap.ts';
 import { clock, COMPOUND_LOOK, gap, lapTime, WEATHER_LABEL } from './format.ts';
 import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './championship.ts';
+import { renderSeasonHub, renderSeasonSetup, type SeasonDeps } from './seasonUi.ts';
+import {
+  isSeasonComplete,
+  loadSeason,
+  nextRound,
+  raceConfigFor,
+  recordResult,
+  roundSeed,
+  saveSeason,
+  type SeasonState,
+} from '@undercut/season';
 
 const app = document.getElementById('app')!;
 
@@ -170,28 +183,56 @@ function renderSetup(): void {
 
   const start = el('button', 'start', 'Go racing');
   start.type = 'button';
-  start.addEventListener('click', () => renderRace());
+  start.addEventListener('click', () => startSingleRace());
 
-  page.append(mark, lede, grid, start);
+  const back = el('button', 'ghost', 'Back');
+  back.type = 'button';
+  back.addEventListener('click', () => renderHome());
+
+  const actions = el('div', 'actions');
+  actions.append(start, back);
+  page.append(mark, lede, grid, actions);
   app.append(page);
 }
 
-/* ------------------------------------------------------------------- race */
-
-function renderRace(): void {
+function startSingleRace(): void {
   const series = championship();
-  const track = trackById(setup.trackId);
   const playerCarId = `${setup.teamId}-1`;
-  const race: Race = createRace(
-    {
-      track,
+  renderRace({
+    config: {
+      track: trackById(setup.trackId),
       regulations: series.regulations(setup.length),
       entries: series.grid(),
       startingWeather: 'dry',
       playerCarId,
     },
-    setup.seed,
-  );
+    seed: setup.seed,
+    playerCarId,
+    multiClass: series.multiClass,
+    onFinish: () => renderSetup(),
+    finishLabel: 'Another race',
+  });
+}
+
+/* ------------------------------------------------------------------- race */
+
+export interface RaceOptions {
+  config: RaceConfig;
+  seed: string;
+  playerCarId: string;
+  /** Where the player goes when the race is over. */
+  onFinish: (result: RaceResult) => void;
+  finishLabel: string;
+  /** Shown in the header strip, e.g. "Round 3 of 8". */
+  subtitle?: string;
+  /** Whether this race has more than one class on track. */
+  multiClass: boolean;
+}
+
+function renderRace(options: RaceOptions): void {
+  const track = options.config.track;
+  const playerCarId = options.playerCarId;
+  const race: Race = createRace(options.config, options.seed);
   // The tank is whatever the car left the pits with; the class decides it.
   const tankKg = Math.max(1, race.state().cars.find((c) => c.id === playerCarId)?.fuelKg ?? 1);
 
@@ -201,7 +242,11 @@ function renderRace(): void {
   /* header strip */
   const strip = el('div', 'strip');
   const stripMark = el('span', 'strip__mark', 'Undercut');
-  const stripTrack = el('span', 'strip__track', track.name);
+  const stripTrack = el(
+    'span',
+    'strip__track',
+    options.subtitle ? `${track.name} · ${options.subtitle}` : track.name,
+  );
   const lapCount = el('span', 'badge');
   const progressBar = el('div', 'strip__progress');
   const progressFill = el('span');
@@ -393,7 +438,7 @@ function renderRace(): void {
             ? `+${lapsDown} LAP${lapsDown > 1 ? 'S' : ''}`
             : gap(car.gapToLeaderMs);
       const classTag =
-        series.multiClass && CLASS_TAG[car.classId]
+        options.multiClass && CLASS_TAG[car.classId]
           ? `<span class="class-tag" style="color:${CLASS_COLOUR[car.classId]}">${CLASS_TAG[car.classId]}</span>`
           : '';
 
@@ -505,7 +550,7 @@ function renderRace(): void {
 
     wallDriver.textContent = car.retired ? `${driver.name} — out` : driver.name;
     const classNote =
-      series.multiClass && CLASS_TAG[car.classId]
+      options.multiClass && CLASS_TAG[car.classId]
         ? `${CLASS_TAG[car.classId]} P${car.classPosition} · `
         : '';
     wallPos.textContent = car.retired
@@ -523,7 +568,7 @@ function renderRace(): void {
     fuelMeter.style.background = 'var(--blue)';
 
     // In endurance the stint clock is the number the pit wall actually watches.
-    if (series.multiClass) {
+    if (options.multiClass) {
       gapLabel.textContent = 'Stint';
       gapValue.textContent = clock(car.stintSeconds * 1000);
     } else {
@@ -604,7 +649,7 @@ function renderRace(): void {
 
     if (race.isFinished()) {
       if (tickTimer !== undefined) window.clearInterval(tickTimer);
-      window.setTimeout(() => renderResults(race, playerCarId), 1400);
+      window.setTimeout(() => renderResults(race, playerCarId, options), 1400);
     }
   }
 
@@ -657,11 +702,15 @@ function renderRace(): void {
   renderStrip(race.state());
   renderTower(race.state());
   renderWall(race.state());
+  const lengthNote =
+    options.config.regulations.raceLength.kind === 'duration'
+      ? `${Math.round(options.config.regulations.raceLength.seconds / 3600)} hours`
+      : `${options.config.regulations.raceLength.laps} laps`;
   pushRadio(
     0,
-    series.multiClass
-      ? `<strong>Green flag.</strong> ${setup.length} hours at ${track.name}.`
-      : `<strong>Lights out.</strong> ${setup.length} laps at ${track.name}.`,
+    options.multiClass
+      ? `<strong>Green flag.</strong> ${lengthNote} at ${track.name}.`
+      : `<strong>Lights out.</strong> ${lengthNote} at ${track.name}.`,
   );
   renderRadio();
   requestAnimationFrame(frame);
@@ -669,8 +718,7 @@ function renderRace(): void {
 
 /* ---------------------------------------------------------------- results */
 
-function renderResults(race: Race, playerCarId: string): void {
-  const series = championship();
+function renderResults(race: Race, playerCarId: string, options: RaceOptions): void {
   const result = race.result();
   const player = result.classification.find((c) => c.carId === playerCarId);
   app.replaceChildren();
@@ -679,7 +727,7 @@ function renderResults(race: Race, playerCarId: string): void {
   const headline = player
     ? player.retired
       ? 'Out.'
-      : series.multiClass
+      : options.multiClass
         ? player.classPosition === 1
           ? `${CLASS_TAG[player.classId] ?? 'Class'} win.`
           : `${CLASS_TAG[player.classId] ?? 'Class'} P${player.classPosition}.`
@@ -702,10 +750,10 @@ function renderResults(race: Race, playerCarId: string): void {
     <thead>
       <tr>
         <th class="eyebrow">Pos</th>
-        ${series.multiClass ? '<th class="eyebrow">Class</th>' : ''}
+        ${options.multiClass ? '<th class="eyebrow">Class</th>' : ''}
         <th class="eyebrow">Driver</th>
         <th class="eyebrow">Team</th>
-        <th class="eyebrow">${series.multiClass ? 'Laps' : 'Gap'}</th>
+        <th class="eyebrow">${options.multiClass ? 'Laps' : 'Gap'}</th>
         <th class="eyebrow">Best</th>
         <th class="eyebrow">Stops</th>
       </tr>
@@ -714,12 +762,12 @@ function renderResults(race: Race, playerCarId: string): void {
   for (const car of result.classification) {
     const row = el('tr');
     if (car.carId === playerCarId) row.className = 'you';
-    const classCell = series.multiClass
+    const classCell = options.multiClass
       ? `<td><span class="class-tag" style="color:${CLASS_COLOUR[car.classId]}">${CLASS_TAG[car.classId] ?? car.classId}</span> P${car.classPosition}</td>`
       : '';
     const resultCell = car.retired
       ? `DNF · ${car.retiredCause}`
-      : series.multiClass
+      : options.multiClass
         ? `${car.lapsCompleted}`
         : car.position === 1
           ? 'WINNER'
@@ -737,12 +785,100 @@ function renderResults(race: Race, playerCarId: string): void {
   table.append(tbody);
   page.append(table);
 
-  const again = el('button', 'start', 'Another race');
+  const again = el('button', 'start', options.finishLabel);
   again.type = 'button';
-  again.addEventListener('click', () => renderSetup());
+  again.addEventListener('click', () => options.onFinish(result));
   page.append(again);
 
   app.append(page);
 }
 
-renderSetup();
+/* ------------------------------------------------------------------- home */
+
+const seasonDeps: SeasonDeps = {
+  app,
+  goHome: () => renderHome(),
+  raceRound: (season) => startSeasonRound(season),
+};
+
+function startSeasonRound(season: SeasonState): void {
+  const round = nextRound(season);
+  if (!round) return renderSeasonHub(season, seasonDeps);
+
+  const playerCarId = `${season.config.playerTeamId}-1`;
+  const seed = roundSeed(season, round.round);
+  const series = CHAMPIONSHIPS.find((c) => c.id === season.config.championshipId)!;
+
+  renderRace({
+    config: raceConfigFor(season, playerCarId),
+    seed,
+    playerCarId,
+    multiClass: series.multiClass,
+    subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
+    finishLabel: 'Back to the season',
+    onFinish: (result) => {
+      const updated = recordResult(season, {
+        round: round.round,
+        trackId: round.trackId,
+        seed,
+        classification: result.classification,
+      });
+      saveSeason(updated);
+      renderSeasonHub(updated, seasonDeps);
+    },
+  });
+}
+
+function renderHome(): void {
+  app.replaceChildren();
+  const page = el('div', 'setup');
+
+  const mark = el('h1', 'setup__mark');
+  mark.innerHTML = 'Under<em>cut</em>';
+  const lede = el(
+    'p',
+    'setup__lede',
+    'You are not driving. You are on the pit wall, watching the gaps and deciding when to box. Run a single race, or take a team through a whole season.',
+  );
+
+  const saved = loadSeason();
+  const choices = el('div', 'home');
+
+  if (saved) {
+    const card = el('button', 'home__card home__card--primary');
+    card.type = 'button';
+    const done = isSeasonComplete(saved);
+    card.innerHTML = `
+      <span class="eyebrow">Continue</span>
+      <span class="home__title">${teamById(saved.config.playerTeamId).name}</span>
+      <span class="home__note">${done ? 'Season finished — the driver market is open.' : `Round ${saved.round + 1} of ${saved.config.trackIds.length}`}</span>`;
+    card.addEventListener('click', () => renderSeasonHub(saved, seasonDeps));
+    choices.append(card);
+  }
+
+  const seasonCard = el('button', 'home__card');
+  seasonCard.type = 'button';
+  seasonCard.innerHTML = `
+    <span class="eyebrow">Championship</span>
+    <span class="home__title">${saved ? 'New season' : 'Run a season'}</span>
+    <span class="home__note">A full calendar, car development between rounds, and a driver market at the end of the year.${saved ? ' This replaces the saved season.' : ''}</span>`;
+  seasonCard.addEventListener('click', () =>
+    renderSeasonSetup(seasonDeps, (season) => renderSeasonHub(season, seasonDeps)),
+  );
+
+  const raceCard = el('button', 'home__card');
+  raceCard.type = 'button';
+  raceCard.innerHTML = `
+    <span class="eyebrow">Single race</span>
+    <span class="home__title">One afternoon</span>
+    <span class="home__note">Pick a circuit, pick a team, call the strategy. Nothing is saved.</span>`;
+  raceCard.addEventListener('click', () => renderSetup());
+
+  choices.append(seasonCard, raceCard);
+  page.append(mark, lede, choices);
+  app.append(page);
+}
+
+renderHome();
+
+export { renderRace, renderSetup, renderHome, el, setup, championship };

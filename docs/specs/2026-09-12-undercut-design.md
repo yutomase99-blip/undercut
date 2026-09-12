@@ -1,7 +1,7 @@
 # Undercut — Design Spec
 
 **Date:** 2026-09-12
-**Status:** stages 1–3 implemented. Stage 4 (season layer) outstanding.
+**Status:** all four stages implemented.
 
 ## 1. What this is
 
@@ -32,7 +32,7 @@ backend. No 3D.
 | 1 | Engine + open-wheel ruleset, headless | done |
 | 2 | Web UI, live race | done |
 | 3 | Endurance ruleset | done |
-| 4 | Season layer | next |
+| 4 | Season layer | done |
 
 Stage 3 lands before stage 4 deliberately: a `Regulations` interface with one
 implementation is always subtly wrong, and the second implementation is what
@@ -144,7 +144,32 @@ Two things also needed to become properties of the ruleset rather than
 constants: attrition (a per-lap retirement roll gives a 200-lap race three times
 a sprint's failures) and refuelling.
 
-## 11. Delivery
+## 11. The season layer
+
+Lives in `packages/season`, and consumes the engine rather than extending it.
+The engine gained exactly one thing to support it: an optional per-race roster
+override, so a developed car races at today's stats without anything being
+written back to the shared catalogue.
+
+Design decisions worth recording:
+
+- **Standings are derived, never stored.** The state holds results; points and
+  order are computed. A points-table change cannot desynchronise a save.
+- **Development slides against performance, twice over.** Budget is larger for
+  slower teams, and an upgrade's gain scales with the headroom a rating has
+  left. Both are needed, or the quickest car compounds its advantage until the
+  championship is decided in the first month of the second year.
+- **The market drafts seat by seat**, in championship order, rather than team by
+  team — otherwise the champion signs the two best drivers on the grid before
+  anyone else has spoken.
+- **Saves are versioned and fail closed.** A save from another schema version,
+  or any unreadable value, returns null rather than throwing: a corrupt save
+  should cost a season, not the ability to open the game.
+- **Storage access is injected**, so persistence is tested without a DOM, and a
+  storage that throws on every call (private browsing, blocked site data) is a
+  supported case rather than a crash.
+
+## 12. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

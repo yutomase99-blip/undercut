@@ -8,6 +8,11 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": { "@undercut/engine": "*" },
-  "devDependencies": { "vite": "^6.0.7" }
+  "dependencies": {
+    "@undercut/engine": "*",
+    "@undercut/season": "*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7"
+  }
 }
