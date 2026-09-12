@@ -1,0 +1,129 @@
+import type { Track } from '../types.ts';
+
+/**
+ * Six invented circuits. Layout points are a closed loop in a 0..1000 box,
+ * drawn anticlockwise from the start line, and exist purely for the map view.
+ */
+export const TRACKS: Track[] = [
+  {
+    id: 'aurora-bay',
+    name: 'Aurora Bay Street Circuit',
+    country: 'Valdana',
+    baseLapMs: 78400,
+    pitLaneLossMs: 19500,
+    overtakingDifficulty: 0.86,
+    tyreWearFactor: 0.78,
+    fuelPerLapKg: 1.62,
+    weatherVolatility: 0.35,
+    defaultLaps: 62,
+    layout: [
+      { x: 120, y: 820 }, { x: 420, y: 830 }, { x: 620, y: 800 }, { x: 700, y: 720 },
+      { x: 690, y: 620 }, { x: 600, y: 560 }, { x: 610, y: 470 }, { x: 720, y: 430 },
+      { x: 850, y: 420 }, { x: 900, y: 330 }, { x: 840, y: 240 }, { x: 700, y: 210 },
+      { x: 520, y: 220 }, { x: 380, y: 180 }, { x: 250, y: 200 }, { x: 180, y: 300 },
+      { x: 230, y: 400 }, { x: 330, y: 450 }, { x: 320, y: 560 }, { x: 200, y: 620 },
+      { x: 110, y: 700 },
+    ],
+  },
+  {
+    id: 'vantor-ring',
+    name: 'Vantor Ring',
+    country: 'Kessel',
+    baseLapMs: 91200,
+    pitLaneLossMs: 21800,
+    overtakingDifficulty: 0.34,
+    tyreWearFactor: 1.24,
+    fuelPerLapKg: 2.08,
+    weatherVolatility: 0.62,
+    defaultLaps: 48,
+    layout: [
+      { x: 150, y: 500 }, { x: 300, y: 380 }, { x: 480, y: 330 }, { x: 660, y: 350 },
+      { x: 800, y: 280 }, { x: 880, y: 180 }, { x: 820, y: 110 }, { x: 660, y: 140 },
+      { x: 540, y: 200 }, { x: 420, y: 180 }, { x: 360, y: 260 }, { x: 300, y: 620 },
+      { x: 380, y: 760 }, { x: 560, y: 820 }, { x: 740, y: 790 }, { x: 860, y: 690 },
+      { x: 820, y: 580 }, { x: 680, y: 540 }, { x: 520, y: 580 }, { x: 360, y: 660 },
+      { x: 220, y: 640 },
+    ],
+  },
+  {
+    id: 'monte-cielo',
+    name: 'Monte Cielo',
+    country: 'Arventa',
+    baseLapMs: 84900,
+    pitLaneLossMs: 23400,
+    overtakingDifficulty: 0.71,
+    tyreWearFactor: 1.05,
+    fuelPerLapKg: 1.84,
+    weatherVolatility: 0.78,
+    defaultLaps: 53,
+    layout: [
+      { x: 180, y: 760 }, { x: 340, y: 780 }, { x: 470, y: 700 }, { x: 500, y: 570 },
+      { x: 610, y: 520 }, { x: 760, y: 540 }, { x: 870, y: 470 }, { x: 880, y: 340 },
+      { x: 780, y: 270 }, { x: 640, y: 300 }, { x: 540, y: 250 }, { x: 560, y: 150 },
+      { x: 450, y: 100 }, { x: 320, y: 140 }, { x: 270, y: 260 }, { x: 320, y: 380 },
+      { x: 260, y: 480 }, { x: 140, y: 530 }, { x: 100, y: 650 },
+    ],
+  },
+  {
+    id: 'kestrel-park',
+    name: 'Kestrel Park',
+    country: 'Brandhall',
+    baseLapMs: 73600,
+    pitLaneLossMs: 17200,
+    overtakingDifficulty: 0.42,
+    tyreWearFactor: 0.94,
+    fuelPerLapKg: 1.55,
+    weatherVolatility: 0.58,
+    defaultLaps: 66,
+    layout: [
+      { x: 140, y: 600 }, { x: 260, y: 700 }, { x: 430, y: 740 }, { x: 600, y: 720 },
+      { x: 730, y: 640 }, { x: 780, y: 520 }, { x: 740, y: 400 }, { x: 620, y: 340 },
+      { x: 640, y: 240 }, { x: 760, y: 190 }, { x: 840, y: 260 }, { x: 900, y: 380 },
+      { x: 880, y: 520 }, { x: 500, y: 520 }, { x: 380, y: 460 }, { x: 300, y: 340 },
+      { x: 180, y: 340 }, { x: 110, y: 460 },
+    ],
+  },
+  {
+    id: 'nordsee',
+    name: 'Nordsee Speedway',
+    country: 'Halvard',
+    baseLapMs: 68300,
+    pitLaneLossMs: 16400,
+    overtakingDifficulty: 0.21,
+    tyreWearFactor: 1.38,
+    fuelPerLapKg: 2.31,
+    weatherVolatility: 0.44,
+    defaultLaps: 71,
+    layout: [
+      { x: 160, y: 420 }, { x: 400, y: 300 }, { x: 660, y: 260 }, { x: 830, y: 320 },
+      { x: 900, y: 460 }, { x: 860, y: 600 }, { x: 700, y: 700 }, { x: 520, y: 730 },
+      { x: 420, y: 660 }, { x: 460, y: 560 }, { x: 380, y: 500 }, { x: 260, y: 540 },
+      { x: 150, y: 560 },
+    ],
+  },
+  {
+    id: 'sable-dunes',
+    name: 'Sable Dunes',
+    country: 'Qadir',
+    baseLapMs: 88100,
+    pitLaneLossMs: 20600,
+    overtakingDifficulty: 0.55,
+    tyreWearFactor: 1.46,
+    fuelPerLapKg: 1.97,
+    weatherVolatility: 0.12,
+    defaultLaps: 50,
+    layout: [
+      { x: 130, y: 520 }, { x: 240, y: 380 }, { x: 400, y: 320 }, { x: 520, y: 380 },
+      { x: 560, y: 500 }, { x: 680, y: 560 }, { x: 800, y: 500 }, { x: 880, y: 380 },
+      { x: 840, y: 250 }, { x: 700, y: 180 }, { x: 520, y: 160 }, { x: 340, y: 170 },
+      { x: 220, y: 220 }, { x: 200, y: 700 }, { x: 340, y: 780 }, { x: 560, y: 790 },
+      { x: 760, y: 760 }, { x: 870, y: 690 },
+    ],
+  },
+];
+
+export function trackById(id: string): Track {
+  const track = TRACKS.find((t) => t.id === id);
+  if (!track) throw new Error(`Unknown track: ${id}`);
+  return track;
+}

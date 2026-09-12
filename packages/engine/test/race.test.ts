@@ -1,0 +1,115 @@
+import { describe, expect, it } from 'vitest';
+import { createRace, simulate } from '../src/core/race.ts';
+import { defaultGrid } from '../src/content/grid.ts';
+import { trackById } from '../src/content/tracks.ts';
+import { openWheelOverLaps } from '../src/rules/openwheel.ts';
+import type { RaceConfig } from '../src/types.ts';
+
+function config(laps = 20, weather: RaceConfig['startingWeather'] = 'dry'): RaceConfig {
+  return {
+    track: trackById('kestrel-park'),
+    regulations: openWheelOverLaps(laps),
+    entries: defaultGrid(),
+    startingWeather: weather,
+  };
+}
+
+describe('race simulation', () => {
+  it('runs to the chequered flag', () => {
+    const result = simulate(config(20), 'race-1');
+    expect(result.totalLaps).toBe(20);
+    expect(result.events.at(-1)?.type).toBe('chequeredFlag');
+  });
+
+  it('classifies every entry exactly once', () => {
+    const result = simulate(config(20), 'race-2');
+    const grid = defaultGrid();
+    expect(result.classification).toHaveLength(grid.length);
+    expect(new Set(result.classification.map((c) => c.carId)).size).toBe(grid.length);
+  });
+
+  it('orders the classification by position with the winner first', () => {
+    const result = simulate(config(20), 'race-3');
+    const positions = result.classification.map((c) => c.position);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(result.classification[0]!.position).toBe(1);
+    expect(result.classification[0]!.gapToWinnerMs).toBe(0);
+  });
+
+  it('never produces an impossible state', () => {
+    const result = simulate(config(30), 'race-4');
+    for (const car of result.classification) {
+      expect(car.lapsCompleted).toBeGreaterThanOrEqual(0);
+      expect(car.lapsCompleted).toBeLessThanOrEqual(30);
+      expect(car.pitStops).toBeLessThanOrEqual(car.lapsCompleted + 1);
+      expect(car.gapToWinnerMs).toBeGreaterThanOrEqual(0);
+      if (!car.retired) expect(car.raceTimeMs).toBeGreaterThan(0);
+    }
+  });
+
+  it('honours a mandatory compound change for cars that finish', () => {
+    const result = simulate(config(30), 'race-5');
+    const finishers = result.classification.filter((c) => !c.retired);
+    expect(finishers.length).toBeGreaterThan(10);
+    for (const car of finishers) expect(car.pitStops).toBeGreaterThanOrEqual(1);
+  });
+
+  it('steps one lap at a time and reports progress', () => {
+    const race = createRace(config(10), 'race-6');
+    expect(race.state().lap).toBe(0);
+    race.tick();
+    expect(race.state().lap).toBe(1);
+    expect(race.state().cars.every((c) => c.lapsCompleted === 1 || c.retired)).toBe(true);
+    while (!race.isFinished()) race.tick();
+    expect(race.state().lap).toBe(10);
+    expect(race.result().classification).toHaveLength(defaultGrid().length);
+  });
+
+  it('accepts a pit command and executes it on the next lap', () => {
+    const race = createRace(config(20), 'race-7');
+    race.tick();
+    const car = race.state().cars[0]!;
+    race.issue({ type: 'pit', car: car.id, compound: 'hard' });
+    race.tick();
+    const after = race.state().cars.find((c) => c.id === car.id)!;
+    expect(after.pitStops).toBe(1);
+    expect(after.compound).toBe('hard');
+    expect(after.tyreAgeLaps).toBe(0);
+  });
+
+  it('accepts a pace command and keeps it until changed', () => {
+    const race = createRace(config(20), 'race-8');
+    const car = race.state().cars[0]!;
+    race.issue({ type: 'pace', car: car.id, mode: 'push' });
+    race.tick();
+    expect(race.state().cars.find((c) => c.id === car.id)!.paceMode).toBe('push');
+    race.tick();
+    expect(race.state().cars.find((c) => c.id === car.id)!.paceMode).toBe('push');
+  });
+
+  it('burns fuel as the race goes on', () => {
+    const race = createRace(config(20), 'race-9');
+    const before = race.state().cars[0]!.fuelKg;
+    race.tick();
+    race.tick();
+    const after = race.state().cars.find((c) => c.id === race.state().cars[0]!.id)!.fuelKg;
+    expect(after).toBeLessThan(before);
+  });
+
+  it('produces a lap time for every running car on every lap', () => {
+    const result = simulate(config(15), 'race-10');
+    const laps = result.events.filter((e) => e.type === 'lapCompleted');
+    expect(laps.length).toBeGreaterThan(15 * 15);
+    for (const event of laps) {
+      if (event.type !== 'lapCompleted') continue;
+      expect(event.lapTimeMs).toBeGreaterThan(30000);
+      expect(event.lapTimeMs).toBeLessThan(400000);
+    }
+  });
+
+  it('runs a wet race without breaking', () => {
+    const result = simulate(config(20, 'wet'), 'race-11');
+    expect(result.classification).toHaveLength(defaultGrid().length);
+    expect(result.events.some((e) => e.type === 'chequeredFlag')).toBe(true);
+  });
+});
