@@ -81,6 +81,8 @@ const REPASS_COOLDOWN_LAPS = 2;
 const SAFETY_CAR_FACTOR = 1.4;
 /** Gap the field is bunched to behind the safety car. */
 const COMPRESSED_GAP_MS = 900;
+/** Space between cars on the starting grid, as time. */
+const GRID_SPACING_MS = 320;
 /** Time lost limping back to the pits on a failed tyre. */
 const TYRE_FAILURE_LOSS_MS = 22_000;
 /** Added to a car that finishes without serving a mandatory compound change. */
@@ -100,6 +102,24 @@ const DRIVER_CHANGE_MS = 12_000;
 const LAPPED_TRAFFIC_MS_PER_CAR = 12;
 
 interface CarRuntime extends CarState {
+  /** How far round the race this car is, in laps. The truth about position. */
+  distance: number;
+  /**
+   * Where this car's own start line is.
+   *
+   * A car starting tenth begins behind the one starting ninth, so its distance
+   * starts negative — and counting laps straight off `Math.floor(distance)`
+   * handed every car but the pole-sitter a phantom lap the moment it crossed
+   * zero. Laps are counted from where each car actually started.
+   */
+  startDistance: number;
+  /** What it is capable of on the lap it is currently running. */
+  paceMs: number;
+  /** Standing in the pit box until this moment on the clock. */
+  pitUntilMs: number | null;
+  lapStartedAtMs: number;
+  pittedThisLap: boolean;
+  finishedAtMs: number | null;
   team: Team;
   driver: Driver;
   carClass: CarClass;
@@ -135,8 +155,17 @@ interface CarRuntime extends CarState {
 export interface Race {
   readonly config: RaceConfig;
   state(): RaceState;
-  /** Advances the race by one lap and returns everything that happened. */
+  /** Advances the race by one lap at the front, and returns what happened. */
   tick(): RaceEvent[];
+  /**
+   * Advances the race by a slice of its own time.
+   *
+   * This is how a race is watched: the interface asks for the milliseconds that
+   * have passed and gets back everything that happened in them.
+   */
+  advance(raceMs: number): RaceEvent[];
+  /** Race time elapsed. */
+  clock(): number;
   issue(command: Command): void;
   isFinished(): boolean;
   result(): RaceResult;
@@ -261,6 +290,14 @@ export function createRace(config: RaceConfig, seed: string): Race {
       reactionLaps: streams.strategy.chance(team.pitCrewSkill * 0.3) ? 0 : 1 + streams.strategy.int(3),
       forecastTrust: forecastTrustFor(team) + streams.strategy.range(-0.14, 0.14),
       mandatoryMarginLaps: 3 + streams.strategy.int(7),
+      distance: 0,
+      inPit: false,
+      startDistance: 0,
+      paceMs: track.baseLapMs,
+      pitUntilMs: null,
+      lapStartedAtMs: 0,
+      pittedThisLap: false,
+      finishedAtMs: null,
       paceEmaMs: 0,
       gridPosition: 0,
       // The set the car starts the race on comes out of the same garage.
@@ -307,11 +344,15 @@ export function createRace(config: RaceConfig, seed: string): Race {
   gridOrder.forEach((car, index) => {
     car.position = index + 1;
     car.gridPosition = index + 1;
+    // The grid is a place on the road, not a tiebreak: a car starting tenth is
+    // genuinely behind the car starting ninth before anybody moves.
+    car.distance = -index * (GRID_SPACING_MS / track.baseLapMs);
+    car.startDistance = car.distance;
   });
 
   const byId = new Map(cars.map((car) => [car.id, car]));
 
-  const events: RaceEvent[] = [{ lap: 0, type: 'raceStart', weather: startingWeather }];
+  const events: RaceEvent[] = [{ lap: 0, atMs: 0, type: 'raceStart', weather: startingWeather }];
 
   let lap = 0;
   let weather: WeatherState = startingWeather;
@@ -344,14 +385,11 @@ export function createRace(config: RaceConfig, seed: string): Race {
     // Grid position breaks the remaining tie: before the first lap every car is
     // on zero, and a stable sort would otherwise fall back to entry order and
     // quietly throw away the entire qualifying result.
+    // Distance is the whole truth about who is ahead: it counts the part of a
+    // lap a car has covered, which is exactly what a lap count throws away.
     const live = cars
       .filter((c) => !c.retired)
-      .sort(
-        (a, b) =>
-          b.lapsCompleted - a.lapsCompleted ||
-          a.raceTimeMs - b.raceTimeMs ||
-          a.gridPosition - b.gridPosition,
-      );
+      .sort((a, b) => b.distance - a.distance || a.gridPosition - b.gridPosition);
     const out = cars
       .filter((c) => c.retired)
       .sort((a, b) => b.lapsCompleted - a.lapsCompleted || a.raceTimeMs - b.raceTimeMs);
@@ -360,9 +398,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const leader = live[0];
     live.forEach((car, index) => {
       car.position = index + 1;
-      car.gapToLeaderMs = leader ? car.raceTimeMs - leader.raceTimeMs : 0;
+      car.gapToLeaderMs = leader ? (leader.distance - car.distance) * car.paceMs : 0;
       const ahead = live[index - 1];
-      car.gapAheadMs = ahead ? car.raceTimeMs - ahead.raceTimeMs : 0;
+      car.gapAheadMs = ahead ? (ahead.distance - car.distance) * car.paceMs : 0;
     });
     out.forEach((car, index) => {
       car.position = live.length + index + 1;
@@ -381,7 +419,25 @@ export function createRace(config: RaceConfig, seed: string): Race {
     if (caution === 'deployed') return;
     caution = 'deployed';
     cautionLapsRemaining = 3 + streams.incident.int(3);
-    events.push({ lap, type: 'caution', phase: 'deployed' });
+    events.push({ lap, atMs: Math.round(clockMs), type: 'caution', phase: 'deployed' });
+
+    // The field closes up behind the safety car, and every strategy built on a
+    // comfortable gap is suddenly worthless. Whole laps of a deficit survive:
+    // a caution closes gaps, it does not un-lap anybody.
+    const bunched = onRoad();
+    const leader = bunched[0];
+    if (leader) {
+      const seenAtDeficit = new Map<number, number>();
+      for (const car of bunched) {
+        const behind = Math.max(0, leader.distance - car.distance);
+        const lapsDown = Math.floor(behind);
+        const queue = (seenAtDeficit.get(lapsDown) ?? 0) + 1;
+        seenAtDeficit.set(lapsDown, queue);
+        car.distance = leader.distance - lapsDown - (queue * COMPRESSED_GAP_MS) / car.paceMs;
+      }
+    }
+
+    for (const car of active()) refreshPace(car);
   }
 
   /**
@@ -455,8 +511,396 @@ export function createRace(config: RaceConfig, seed: string): Race {
     }
   }
 
-  function rollAttrition(): void {
-    for (const car of active()) {
+  /* ------------------------------------------------------------------ *
+   * The race runs on a clock, not on laps.
+   *
+   * A lap used to be the smallest thing that happened: positions, gaps,
+   * overtakes, incidents and pit stops were all decided at once and the
+   * interface smoothed the result afterwards. Nothing could be watched, because
+   * nothing happened in between.
+   *
+   * Cars now carry a distance that grows continuously. Pace is still settled a
+   * lap at a time — that is where tyres, fuel and strategy live — but where a
+   * car *is* changes every step, passes happen at the places on the circuit
+   * where passing happens, and a stop is a car standing still for as long as
+   * the stop takes.
+   * ------------------------------------------------------------------ */
+
+  /** Simulated time per step. Small enough to watch, large enough to be cheap. */
+  const STEP_MS = 500;
+  /** Where on a lap a move can actually be made. */
+  const PASSING_ZONES = [0.22, 0.54, 0.86];
+  /** Time gap under which a car is in the wake of the one ahead. */
+  const DIRTY_AIR_GAP_MS = DIRTY_AIR_ZONE_MS;
+
+  let clockMs = 0;
+
+  /** The gap, in seconds of race time, between a car and the one ahead of it. */
+  function gapBetween(car: CarRuntime, ahead: CarRuntime): number {
+    return (ahead.distance - car.distance) * car.paceMs;
+  }
+
+  /** A car's pace right now, including whatever it is stuck behind. */
+  function effectivePaceMs(car: CarRuntime, ahead: CarRuntime | undefined): number {
+    let pace = car.paceMs;
+    if (ahead) {
+      const gapMs = gapBetween(car, ahead);
+      if (gapMs > 0 && gapMs < DIRTY_AIR_GAP_MS) {
+        const closeness = 1 - gapMs / DIRTY_AIR_GAP_MS;
+        pace += DIRTY_AIR_MAX_MS * closeness;
+      }
+    }
+    return Math.max(1, pace);
+  }
+
+  /** Settles what a car is capable of for the lap it is starting. */
+  function refreshPace(car: CarRuntime): void {
+    if (caution === 'deployed') {
+      car.paceMs = track.baseLapMs * SAFETY_CAR_FACTOR;
+      car.lastBreakdown = emptyBreakdown(car.paceMs);
+      return;
+    }
+    const breakdown = computeLapTime({
+      track,
+      team: car.team,
+      driver: car.driver,
+      carClass: car.carClass,
+      compound: COMPOUNDS[car.compound],
+      tyreAgeLaps: car.tyreAgeLaps,
+      fuelKg: car.fuelKg,
+      paceMode: car.paceMode,
+      wetness,
+      downforce: car.downforce,
+      trafficMs: lappedTrafficMs(car),
+      rng: streams.driverError,
+    });
+    car.lastBreakdown = breakdown;
+    car.paceMs = Math.max(1, breakdown.totalMs);
+  }
+
+  /** Slower classes to be threaded through, as a time cost per lap. */
+  function lappedTrafficMs(car: CarRuntime): number {
+    if (regulations.classes.length <= 1) return 0;
+    let slower = 0;
+    for (const other of cars) {
+      if (other.retired || other.finished) continue;
+      if (other.carClass.performanceOffsetMs > car.carClass.performanceOffsetMs) slower += 1;
+    }
+    return slower * LAPPED_TRAFFIC_MS_PER_CAR;
+  }
+
+  /** Everything that happens when a car completes a lap. */
+  function onLapCompleted(car: CarRuntime): void {
+    car.lapsCompleted += 1;
+    const lapTimeMs = clockMs - car.lapStartedAtMs;
+    car.lapStartedAtMs = clockMs;
+    car.lastLapMs = lapTimeMs;
+    if (caution !== 'deployed' && !car.pittedThisLap) {
+      car.bestLapMs = Math.min(car.bestLapMs, lapTimeMs);
+      car.paceEmaMs =
+        car.paceEmaMs === 0 ? lapTimeMs : car.paceEmaMs * (1 - PACE_EMA_ALPHA) + lapTimeMs * PACE_EMA_ALPHA;
+    }
+    car.pittedThisLap = false;
+
+    events.push({
+      lap: car.lapsCompleted,
+      atMs: Math.round(clockMs),
+      type: 'lapCompleted',
+      car: car.id,
+      lapTimeMs: Math.round(lapTimeMs),
+      position: car.position,
+    });
+
+    // The pit lane is entered from the lap you have just finished.
+    if (car.pendingPit) enterPits(car);
+    else refreshPace(car);
+
+    if (durationMs !== null && clockMs >= durationMs) {
+      car.finished = true;
+      car.finishedAtMs = clockMs;
+    } else if (durationMs === null && car.lapsCompleted >= totalLaps) {
+      car.finished = true;
+      car.finishedAtMs = clockMs;
+      // A lap-limited race is over when the leader crosses. Everyone else is
+      // classified on the lap they are on, rather than carrying on alone.
+      for (const other of cars) {
+        if (other.retired || other.finished) continue;
+        const behind = car.distance - other.distance;
+        other.finished = true;
+        other.finishedAtMs = clockMs + behind * other.paceMs;
+        // Anyone on the lead lap still runs to the flag and is credited with
+        // the distance, the way a classification actually reads.
+        if (behind < 1) other.lapsCompleted = car.lapsCompleted;
+      }
+    }
+  }
+
+  /** Puts a car in the pit lane for as long as the stop actually takes. */
+  function enterPits(car: CarRuntime): void {
+    const fitted = availableCompound(
+      car.allocation,
+      car.pendingPit!,
+      regulations.tyreRules.allowedCompounds,
+    );
+    if (!fitted) {
+      car.pendingPit = null;
+      refreshPace(car);
+      return;
+    }
+    car.pendingPit = fitted;
+
+    let stationaryMs = pitStopMs(car.team, streams.pitCrew);
+    if (regulations.refuelling) {
+      stationaryMs += Math.max(0, car.fuelCapacityKg - car.fuelKg) * REFUEL_MS_PER_KG;
+    }
+    if (car.roster.length > 1) stationaryMs += DRIVER_CHANGE_MS;
+
+    car.pitUntilMs = clockMs + totalPitLossMs(track, stationaryMs);
+    car.pittedThisLap = true;
+
+    events.push({
+      lap: car.lapsCompleted,
+      atMs: Math.round(clockMs),
+      type: 'pitStop',
+      car: car.id,
+      compound: fitted,
+      stationaryMs: Math.round(stationaryMs),
+    });
+    events.push({
+      lap: car.lapsCompleted,
+      atMs: Math.round(clockMs),
+      type: 'radio',
+      car: car.id,
+      message: `Box, box. ${COMPOUNDS[fitted].label} for ${car.driver.name}.`,
+    });
+
+    if (streams.pitCrew.chance(unsafeReleaseChance(car.team))) {
+      car.penaltySeconds += PENALTY_SECONDS;
+      events.push({
+        lap: car.lapsCompleted,
+        atMs: Math.round(clockMs),
+        type: 'penalty',
+        car: car.id,
+        reason: 'unsafeRelease',
+        seconds: PENALTY_SECONDS,
+      });
+    }
+  }
+
+  /** Bolts on what the car came in for and sends it back out. */
+  function leavePits(car: CarRuntime): void {
+    const compound = car.pendingPit;
+    car.pitUntilMs = null;
+    car.pendingPit = null;
+    if (!compound) {
+      refreshPace(car);
+      return;
+    }
+
+    car.compound = compound;
+    car.allocation = takeSet(car.allocation, compound);
+    car.compoundsUsed.push(compound);
+    car.tyreAgeLaps = 0;
+    car.pitStops += 1;
+    car.plannedStintLaps = plannedStint(compound, track.tyreWearFactor, streams.strategy);
+    if (regulations.refuelling) car.fuelKg = car.fuelCapacityKg;
+
+    if (car.roster.length > 1) {
+      const from = car.driverId;
+      car.rosterIndex = (car.rosterIndex + 1) % car.roster.length;
+      const to = car.roster[car.rosterIndex]!;
+      car.driverId = to;
+      car.driver = resolveDriver(to);
+      car.driversUsed.push(to);
+      car.stintSeconds = 0;
+      events.push({ lap: car.lapsCompleted, atMs: Math.round(clockMs), type: 'driverChange', car: car.id, from, to });
+      events.push({
+        lap: car.lapsCompleted,
+        atMs: Math.round(clockMs),
+        type: 'radio',
+        car: car.id,
+        message: `${car.driver.name} takes over.`,
+      });
+    }
+
+    refreshPace(car);
+  }
+
+  /** Keeps cars from driving through one another, and lets them try not to. */
+  function resolveProximity(stepMs: number): void {
+    const field = onRoad();
+
+    for (let index = 1; index < field.length; index += 1) {
+      const car = field[index]!;
+      const ahead = field[index - 1]!;
+      const gapMs = gapBetween(car, ahead);
+      if (gapMs >= MIN_GAP_MS) continue;
+
+      // Close enough to try. A move can only be made where the circuit allows
+      // one, so the chance is taken at the passing zones rather than wherever
+      // the simulation happened to look.
+      const inZone = crossedPassingZone(car, stepMs);
+      // Capability in clear air, not the lap times actually being set.
+      //
+      // Observed pace cannot answer this: cars held nose to tail all lap the
+      // same time, so a train makes everyone look equally quick and nobody ever
+      // has a reason to try. A whole field would lock into grid order and a
+      // Hypercar would spend an hour behind an LMP2 that was four seconds a lap
+      // slower.
+      const sustained = ahead.paceMs - car.paceMs;
+      const beaten = lastPassedBy.get(car.id);
+      const onCooldown =
+        beaten !== undefined && beaten.by === ahead.id && car.lapsCompleted - beaten.lap < REPASS_COOLDOWN_LAPS;
+
+      if (
+        inZone &&
+        caution !== 'deployed' &&
+        sustained >= ATTEMPT_THRESHOLD_MS &&
+        !onCooldown
+      ) {
+        const chance = overtakeChance({
+          paceAdvantageMs: Math.max(sustained, MIN_GAP_MS - gapMs) + overtakeShiftFor(car.downforce, ahead.downforce),
+          attackerAggression: car.driver.aggression,
+          defenderSkill: ahead.driver.skill,
+          trackDifficulty: track.overtakingDifficulty,
+          classDifferentialBonusMs:
+            car.carClass.id === ahead.carClass.id ? 0 : regulations.overtaking.classDifferentialBonusMs,
+          drsZones: regulations.overtaking.drsZones,
+        });
+        const success = streams.overtake.chance(chance);
+        events.push({
+          lap: car.lapsCompleted + 1,
+          atMs: Math.round(clockMs),
+          type: 'overtake',
+          car: car.id,
+          victim: ahead.id,
+          success,
+        });
+        if (success) {
+          // Through. The pass is worth the width of a car, and costs the
+          // defender a moment.
+          const swap = ahead.distance + 0.0004;
+          ahead.distance -= (PASS_COST_MS / ahead.paceMs) * 0.5;
+          car.distance = swap;
+          lastPassedBy.set(ahead.id, { by: car.id, lap: ahead.lapsCompleted });
+          continue;
+        }
+        // The move did not stick: back out, lose the momentum, try again.
+        car.tyreAgeLaps += DIRTY_AIR_WEAR * 0.25;
+        car.distance -= FAILED_ATTEMPT_COST_MS / car.paceMs;
+      }
+
+      // No way past: hold station behind.
+      car.distance = ahead.distance - MIN_GAP_MS / car.paceMs;
+    }
+  }
+
+  /** True when this step took the car through one of the circuit's passing places. */
+  function crossedPassingZone(car: CarRuntime, stepMs: number): boolean {
+    const travelled = stepMs / car.paceMs;
+    const from = car.distance - travelled;
+    for (const zone of PASSING_ZONES) {
+      const previous = Math.floor(from) + zone;
+      const next = Math.floor(car.distance) + zone;
+      if ((from < previous && car.distance >= previous) || (from < next && car.distance >= next)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Laps are read off the road, never counted as they are driven.
+   *
+   * Holding station behind another car moves you back, and a pass moves you
+   * forward; both can carry a car over the line without it having driven there,
+   * or back over one it has already crossed. Counting at the moment of movement
+   * meant distance and lap count drifted apart until a car on thirty laps was
+   * classified sixth behind one on twenty-eight.
+   */
+  function countLaps(): void {
+    for (const car of cars) {
+      if (car.retired || car.finished) continue;
+      const crossed = Math.floor(car.distance - car.startDistance);
+      while (car.lapsCompleted < crossed && !car.finished) onLapCompleted(car);
+    }
+  }
+
+  /** Cars on the road right now, leader first. Rebuilt once per step. */
+  function onRoad(): CarRuntime[] {
+    const field: CarRuntime[] = [];
+    for (const car of cars) {
+      if (car.retired || car.finished || car.pitUntilMs !== null) continue;
+      field.push(car);
+    }
+    return field.sort((a, b) => b.distance - a.distance);
+  }
+
+  /** One slice of race time. */
+  function step(stepMs: number): void {
+    clockMs += stepMs;
+
+    // The order of the road is settled once and reused. Working it out per car
+    // turned one sort into four hundred, and a two second test suite into a
+    // ninety second one.
+    const roadBefore = onRoad();
+    const aheadOf = new Map<CarId, CarRuntime>();
+    for (let i = 1; i < roadBefore.length; i += 1) {
+      aheadOf.set(roadBefore[i]!.id, roadBefore[i - 1]!);
+    }
+
+    for (const car of cars) {
+      if (car.retired || car.finished) continue;
+      if (car.pitUntilMs !== null) {
+        car.raceTimeMs = clockMs;
+        if (clockMs >= car.pitUntilMs) leavePits(car);
+        continue;
+      }
+
+      const ahead = aheadOf.get(car.id);
+      const pace = effectivePaceMs(car, ahead);
+      const covered = stepMs / pace;
+      const before = car.distance;
+      car.distance += covered;
+      car.raceTimeMs = clockMs;
+      car.stintSeconds += stepMs / 1000;
+
+      const wearMultiplier =
+        (caution === 'deployed' ? 0.3 : PACE_WEAR_FACTOR[car.paceMode]) *
+        tyreLoadFor(car.downforce) *
+        (car.team.tyreWear ?? 1);
+      car.tyreAgeLaps += covered * wearMultiplier;
+
+      const fuelMultiplier =
+        (caution === 'deployed' ? 0.6 : PACE_FUEL_FACTOR[car.paceMode]) * fuelFactorFor(car.downforce);
+      car.fuelKg = Math.max(0, car.fuelKg - track.fuelPerLapKg * covered * fuelMultiplier);
+
+      // Condition is read off the age every step. It used to be recalculated in
+      // the block that ended a lap, and when that block went so did this: the
+      // wear bar sat at 100% for an entire race and the pit wall was never told
+      // its tyres were finished.
+      car.tyreConditionPct = tyreConditionPct(
+        COMPOUNDS[car.compound],
+        car.tyreAgeLaps,
+        track.tyreWearFactor,
+      );
+
+      void before;
+    }
+
+    resolveProximity(stepMs);
+    countLaps();
+    rollLiveIncidents(stepMs);
+    refreshOrder();
+    updateSessionState();
+  }
+
+  /** Retirements, tyre failures and the stewards, all scaled to the step. */
+  function rollLiveIncidents(stepMs: number): void {
+    for (const car of cars) {
+      if (car.retired || car.finished || car.pitUntilMs !== null) continue;
+      const share = stepMs / Math.max(1, car.paceMs);
+
       const cause = rollRetirement(
         car.team,
         car.driver,
@@ -464,429 +908,147 @@ export function createRace(config: RaceConfig, seed: string): Race {
         car.paceMode,
         streams.mechanical,
         streams.incident,
-        regulations.attritionScale,
+        regulations.attritionScale * share,
       );
-      if (!cause) continue;
-      car.retired = true;
-      car.retiredCause = cause;
-      events.push({ lap, type: 'retirement', car: car.id, cause });
-      events.push({
-        lap,
-        type: 'radio',
-        car: car.id,
-        message:
-          cause === 'mechanical'
-            ? `${car.driver.name}: something let go. I'm stopping.`
-            : `${car.driver.name}: I've lost it — I'm in the wall. Sorry, everyone.`,
-      });
-      if (cautionFollows(regulations.cautions.incidentRatePerLap, streams.incident)) {
-        deployCaution();
+      if (cause) {
+        car.retired = true;
+        car.retiredCause = cause;
+        events.push({ lap: car.lapsCompleted + 1, atMs: Math.round(clockMs), type: 'retirement', car: car.id, cause });
+        events.push({
+          lap: car.lapsCompleted + 1,
+          atMs: Math.round(clockMs),
+          type: 'radio',
+          car: car.id,
+          message:
+            cause === 'mechanical'
+              ? `${car.driver.name}: something let go. I'm stopping.`
+              : cause === 'outOfFuel'
+                ? `${car.driver.name}: that's it, we're out of fuel.`
+                : `${car.driver.name}: I've lost it — I'm in the wall.`,
+        });
+        if (cautionFollows(regulations.cautions.incidentRatePerLap, streams.incident)) deployCaution();
+        continue;
+      }
+
+      if (car.fuelKg <= 0) {
+        car.retired = true;
+        car.retiredCause = 'outOfFuel';
+        events.push({ lap: car.lapsCompleted + 1, atMs: Math.round(clockMs), type: 'retirement', car: car.id, cause: 'outOfFuel' });
+        continue;
+      }
+
+      if (
+        streams.mechanical.chance(
+          tyreFailureChance(COMPOUNDS[car.compound], car.tyreAgeLaps, track.tyreWearFactor) * share,
+        )
+      ) {
+        car.distance -= TYRE_FAILURE_LOSS_MS / car.paceMs;
+        events.push({
+          lap: car.lapsCompleted + 1,
+          atMs: Math.round(clockMs),
+          type: 'tyreFailure',
+          car: car.id,
+          compound: car.compound,
+          ageLaps: Math.round(car.tyreAgeLaps),
+        });
+        car.pendingPit =
+          availableCompound(car.allocation, car.compound, regulations.tyreRules.allowedCompounds) ??
+          car.compound;
+      }
+
+      if (caution !== 'deployed' && streams.incident.chance(
+        trackLimitChance(car.driver, car.paceMode, track.overtakingDifficulty) * share,
+      )) {
+        car.trackLimitWarnings += 1;
+        if (car.trackLimitWarnings <= LIMIT_WARNINGS_ALLOWED) {
+          events.push({ lap: car.lapsCompleted + 1, atMs: Math.round(clockMs), type: 'warning', car: car.id, count: car.trackLimitWarnings });
+        } else {
+          car.penaltySeconds += PENALTY_SECONDS;
+          events.push({
+            lap: car.lapsCompleted + 1,
+            atMs: Math.round(clockMs),
+            type: 'penalty',
+            car: car.id,
+            reason: 'trackLimits',
+            seconds: PENALTY_SECONDS,
+          });
+        }
       }
     }
   }
 
-  function tick(): RaceEvent[] {
-    if (finished) return [];
-    const emittedFrom = events.length;
-    lap += 1;
+  /** Weather, cautions and strategy, reconsidered once a lap at the front. */
+  function updateSessionState(): void {
+    let leaderLap = 0;
+    for (const car of cars) {
+      if (!car.retired && car.lapsCompleted > leaderLap) leaderLap = car.lapsCompleted;
+    }
+    if (leaderLap === lap) {
+      if (durationMs !== null && clockMs >= durationMs && active().length === 0) endRace();
+      else if (durationMs === null && active().length === 0) endRace();
+      return;
+    }
+    lap = leaderLap;
 
     const nextWeather = weatherTimeline[lap] ?? weather;
     if (nextWeather !== weather) {
-      events.push({ lap, type: 'weather', from: weather, to: nextWeather });
+      events.push({ lap, atMs: Math.round(clockMs), type: 'weather', from: weather, to: nextWeather });
       weather = nextWeather;
       weatherChangedAtLap = lap;
     }
-
-    // The sky changes at once; the track takes its time catching up.
     wetness = stepWetness(wetness, weather);
 
     if (caution === 'deployed') {
       cautionLapsRemaining -= 1;
       if (cautionLapsRemaining <= 0) {
         caution = 'none';
-        events.push({ lap, type: 'caution', phase: 'ending' });
+        events.push({ lap, atMs: Math.round(clockMs), type: 'caution', phase: 'ending' });
+        for (const car of active()) refreshPace(car);
       }
     }
-    const cautionAtLapStart = caution === 'deployed';
 
     runStrategy();
-    rollAttrition();
-    const cautionDeployedThisLap = caution === 'deployed' && !cautionAtLapStart;
-    const underCaution = caution === 'deployed';
 
-    const field = active();
+    if (active().length === 0) endRace();
+  }
 
-    // How much slower traffic each class has to deal with this lap.
-    const slowerCarsByClass = new Map<string, number>();
-    if (regulations.classes.length > 1) {
-      for (const carClass of regulations.classes) {
-        slowerCarsByClass.set(
-          carClass.id,
-          field.filter((c) => c.carClass.performanceOffsetMs > carClass.performanceOffsetMs).length,
-        );
-      }
+  function endRace(): void {
+    if (finished) return;
+    finished = true;
+    const winner = classify()[0];
+    if (winner) {
+      events.push({ lap, atMs: Math.round(clockMs), type: 'chequeredFlag', winner: winner.carId });
     }
-    const lappedTrafficMs = (car: CarRuntime) =>
-      (slowerCarsByClass.get(car.classId) ?? 0) * LAPPED_TRAFFIC_MS_PER_CAR;
+  }
 
-    const rawLapMs = new Map<CarId, number>();
-    const provisional = new Map<CarId, number>();
-    const extraWear = new Map<CarId, number>();
-    const pitLapIds = new Set<CarId>();
-
-    for (const car of field) {
-      let breakdown: LapBreakdown;
-      if (underCaution) {
-        breakdown = emptyBreakdown(track.baseLapMs * SAFETY_CAR_FACTOR);
-      } else {
-        breakdown = computeLapTime({
-          track,
-          team: car.team,
-          driver: car.driver,
-          carClass: car.carClass,
-          compound: COMPOUNDS[car.compound],
-          tyreAgeLaps: car.tyreAgeLaps,
-          fuelKg: car.fuelKg,
-          paceMode: car.paceMode,
-          wetness,
-          downforce: car.downforce,
-          trafficMs: lappedTrafficMs(car),
-          rng: streams.driverError,
-        });
-      }
-
-      let total = breakdown.totalMs;
-      if (car.pendingPit) {
-        // You can only bolt on what is in the garage. A call for a set the car
-        // has run out of becomes the nearest thing it still has.
-        const fitted = availableCompound(
-          car.allocation,
-          car.pendingPit,
-          regulations.tyreRules.allowedCompounds,
-        );
-        if (fitted && fitted !== car.pendingPit) car.pendingPit = fitted;
-        if (!fitted) car.pendingPit = null;
-      }
-
-      if (car.pendingPit) {
-        let stationaryMs = pitStopMs(car.team, streams.pitCrew);
-        if (regulations.refuelling) {
-          stationaryMs += Math.max(0, car.fuelCapacityKg - car.fuelKg) * REFUEL_MS_PER_KG;
-        }
-        if (car.roster.length > 1) stationaryMs += DRIVER_CHANGE_MS;
-        total += totalPitLossMs(track, stationaryMs);
-        pitLapIds.add(car.id);
-        events.push({
-          lap,
-          type: 'pitStop',
-          car: car.id,
-          compound: car.pendingPit,
-          stationaryMs: Math.round(stationaryMs),
-        });
-        events.push({
-          lap,
-          type: 'radio',
-          car: car.id,
-          message: `Box, box. ${COMPOUNDS[car.pendingPit].label} for ${car.driver.name}.`,
-        });
-        if (streams.pitCrew.chance(unsafeReleaseChance(car.team))) {
-          car.penaltySeconds += PENALTY_SECONDS;
-          events.push({
-            lap,
-            type: 'penalty',
-            car: car.id,
-            reason: 'unsafeRelease',
-            seconds: PENALTY_SECONDS,
-          });
-        }
-      }
-
-      car.lastBreakdown = breakdown;
-      rawLapMs.set(car.id, total);
-      provisional.set(car.id, car.raceTimeMs + total);
+  /** Runs the race forward by a slice of its own time. */
+  function advance(raceMs: number): RaceEvent[] {
+    if (finished) return [];
+    const emittedFrom = events.length;
+    let remaining = raceMs;
+    while (remaining > 0 && !finished) {
+      const slice = Math.min(STEP_MS, remaining);
+      step(slice);
+      remaining -= slice;
     }
+    return events.slice(emittedFrom);
+  }
 
-    // Resolve who actually gets past whom. Walking from the front means a train
-    // of cars resolves naturally: the leader is free, everyone else is measured
-    // against the car they are actually stuck behind.
-    let previousId: CarId | null = null;
-    let previousTime = 0;
-    for (const car of field) {
-      let time = provisional.get(car.id)!;
-      if (previousId !== null) {
-        const defender = byId.get(previousId)!;
-
-        // Running in another car's wake costs time and eats the tyre. This is
-        // what stops the whole field from sitting nose-to-tail and attacking
-        // every single lap: to be a threat you must be faster than the wake is
-        // expensive, not merely faster.
-        const rawGapMs = time - previousTime;
-        if (rawGapMs < DIRTY_AIR_ZONE_MS && !underCaution) {
-          const closeness = 1 - Math.max(0, rawGapMs) / DIRTY_AIR_ZONE_MS;
-          time += DIRTY_AIR_MAX_MS * closeness;
-          extraWear.set(car.id, (extraWear.get(car.id) ?? 0) + DIRTY_AIR_WEAR * closeness);
-        }
-
-        const minimumTime = previousTime + MIN_GAP_MS;
-        if (time < minimumTime) {
-          const closingMs = minimumTime - time;
-          // Real pace, not a lucky lap: how much quicker this car has actually
-          // been running than the one it has caught.
-          const sustainedAdvantageMs =
-            car.paceEmaMs > 0 && defender.paceEmaMs > 0
-              ? defender.paceEmaMs - car.paceEmaMs
-              : closingMs;
-          const beatenRecently = lastPassedBy.get(car.id);
-          const onCooldown =
-            beatenRecently !== undefined &&
-            beatenRecently.by === defender.id &&
-            lap - beatenRecently.lap < REPASS_COOLDOWN_LAPS;
-
-          if (!underCaution && sustainedAdvantageMs >= ATTEMPT_THRESHOLD_MS && !onCooldown) {
-            const chance = overtakeChance({
-              // Straight-line speed decides where passes actually happen, so
-              // the wing each car is carrying counts alongside pace.
-              paceAdvantageMs:
-                Math.max(sustainedAdvantageMs, closingMs) +
-                overtakeShiftFor(car.downforce, defender.downforce),
-              attackerAggression: car.driver.aggression,
-              defenderSkill: defender.driver.skill,
-              trackDifficulty: track.overtakingDifficulty,
-              classDifferentialBonusMs:
-                car.carClass.id === defender.carClass.id
-                  ? 0
-                  : regulations.overtaking.classDifferentialBonusMs,
-              drsZones: regulations.overtaking.drsZones,
-            });
-            const success = streams.overtake.chance(chance);
-            events.push({ lap, type: 'overtake', car: car.id, victim: defender.id, success });
-            if (success) {
-              provisional.set(defender.id, provisional.get(defender.id)! + PASS_COST_MS);
-              lastPassedBy.set(defender.id, { by: car.id, lap });
-            } else {
-              // The move did not stick: back out, lose the momentum, try again.
-              time = minimumTime + FAILED_ATTEMPT_COST_MS;
-            }
-          } else {
-            time = minimumTime;
-          }
-        }
-      }
-      provisional.set(car.id, time);
-      previousTime = time;
-      previousId = car.id;
+  /**
+   * Advances by one lap at the front.
+   *
+   * Kept because a season simulating a calendar has no use for watching, and
+   * because every test written before the clock existed speaks in laps.
+   */
+  function tick(): RaceEvent[] {
+    if (finished) return [];
+    const emittedFrom = events.length;
+    const startLap = lap;
+    let guard = 0;
+    while (!finished && lap === startLap && guard < 4000) {
+      step(STEP_MS);
+      guard += 1;
     }
-
-    // The stewards. Pushing is already paid for in rubber and fuel; this is
-    // what makes it occasionally cost five seconds as well.
-    for (const car of field) {
-      if (underCaution) continue;
-      const wide = streams.incident.chance(
-        trackLimitChance(car.driver, car.paceMode, track.overtakingDifficulty),
-      );
-      if (!wide) continue;
-      car.trackLimitWarnings += 1;
-      // Stated as a fact, without a radio call. Twenty cars running wide would
-      // drown the team radio in other people's business; the interface decides
-      // which of these its own driver hears about.
-      if (car.trackLimitWarnings <= LIMIT_WARNINGS_ALLOWED) {
-        events.push({ lap, type: 'warning', car: car.id, count: car.trackLimitWarnings });
-      } else {
-        car.penaltySeconds += PENALTY_SECONDS;
-        events.push({
-          lap,
-          type: 'penalty',
-          car: car.id,
-          reason: 'trackLimits',
-          seconds: PENALTY_SECONDS,
-        });
-      }
-    }
-
-    for (const car of field) {
-      const raw = rawLapMs.get(car.id)!;
-      const finalTime = provisional.get(car.id)!;
-      const trafficMs = Math.max(0, finalTime - (car.raceTimeMs + raw));
-      const lapTimeMs = raw + trafficMs;
-
-      if (car.lastBreakdown) {
-        car.lastBreakdown = {
-          ...car.lastBreakdown,
-          trafficMs,
-          totalMs: car.lastBreakdown.totalMs + trafficMs,
-        };
-      }
-
-      if (!underCaution && !pitLapIds.has(car.id)) {
-        car.paceEmaMs =
-          car.paceEmaMs === 0 ? raw : car.paceEmaMs * (1 - PACE_EMA_ALPHA) + raw * PACE_EMA_ALPHA;
-      }
-
-      car.raceTimeMs = finalTime;
-      car.lastLapMs = lapTimeMs;
-      car.lapsCompleted += 1;
-      if (!underCaution && !pitLapIds.has(car.id)) {
-        car.bestLapMs = Math.min(car.bestLapMs, lapTimeMs);
-      }
-
-      const wearMultiplier =
-        (underCaution ? 0.3 : PACE_WEAR_FACTOR[car.paceMode]) *
-        tyreLoadFor(car.downforce) *
-        (car.team.tyreWear ?? 1);
-      car.tyreAgeLaps += wearMultiplier + (extraWear.get(car.id) ?? 0);
-
-      const fuelMultiplier =
-        (underCaution ? 0.6 : PACE_FUEL_FACTOR[car.paceMode]) * fuelFactorFor(car.downforce);
-      car.fuelKg = Math.max(0, car.fuelKg - track.fuelPerLapKg * fuelMultiplier);
-      if (car.fuelKg < 1.5 && car.paceMode !== 'save' && !car.retired) {
-        car.paceMode = 'save';
-        car.manualPace = false;
-        events.push({
-          lap,
-          type: 'radio',
-          car: car.id,
-          message: `${car.driver.name}, we are critical on fuel. Save, save.`,
-        });
-      }
-
-      // An empty tank ends the race for that car. Without this a pit wall that
-      // simply never calls a stop circulates on nothing and wins on strategy it
-      // never had to pay for.
-      if (car.fuelKg <= 0 && !car.retired) {
-        car.retired = true;
-        car.retiredCause = 'outOfFuel';
-        events.push({ lap, type: 'retirement', car: car.id, cause: 'outOfFuel' });
-        events.push({
-          lap,
-          type: 'radio',
-          car: car.id,
-          message: `${car.driver.name}: that's it, we're out of fuel. Stopping on track.`,
-        });
-      }
-
-      car.stintSeconds += lapTimeMs / 1000;
-
-      if (car.pendingPit) {
-        car.compound = car.pendingPit;
-        car.allocation = takeSet(car.allocation, car.pendingPit);
-        car.compoundsUsed.push(car.pendingPit);
-        car.tyreAgeLaps = 0;
-        car.pitStops += 1;
-        car.pendingPit = null;
-        car.plannedStintLaps = plannedStint(car.compound, track.tyreWearFactor, streams.strategy);
-
-        if (regulations.refuelling) car.fuelKg = car.fuelCapacityKg;
-
-        // The crew rotates at every stop, which is how a three-driver line-up
-        // gets through a long race inside the stint limits.
-        if (car.roster.length > 1) {
-          const from = car.driverId;
-          car.rosterIndex = (car.rosterIndex + 1) % car.roster.length;
-          const to = car.roster[car.rosterIndex]!;
-          car.driverId = to;
-          car.driver = resolveDriver(to);
-          car.driversUsed.push(to);
-          car.stintSeconds = 0;
-          events.push({ lap, type: 'driverChange', car: car.id, from, to });
-          events.push({
-            lap,
-            type: 'radio',
-            car: car.id,
-            message: `${car.driver.name} takes over.`,
-          });
-        }
-      }
-
-      if (durationMs !== null && car.raceTimeMs >= durationMs) car.finished = true;
-
-      car.tyreConditionPct = tyreConditionPct(
-        COMPOUNDS[car.compound],
-        car.tyreAgeLaps,
-        track.tyreWearFactor,
-      );
-
-      // A set run past the end of its life does not just go slowly: it lets go.
-      // The car limps to the pits and the stint is over whether the pit wall
-      // had planned it or not.
-      if (
-        !car.retired &&
-        !car.finished &&
-        streams.mechanical.chance(
-          tyreFailureChance(COMPOUNDS[car.compound], car.tyreAgeLaps, track.tyreWearFactor),
-        )
-      ) {
-        car.raceTimeMs += TYRE_FAILURE_LOSS_MS;
-        events.push({
-          lap,
-          type: 'tyreFailure',
-          car: car.id,
-          compound: car.compound,
-          ageLaps: Math.round(car.tyreAgeLaps),
-        });
-        events.push({
-          lap,
-          type: 'radio',
-          car: car.id,
-          message: `${car.driver.name}: the tyre has gone. Limping back to the pits.`,
-        });
-        const replacement = availableCompound(
-          car.allocation,
-          car.compound,
-          regulations.tyreRules.allowedCompounds,
-        );
-        car.pendingPit = replacement ?? car.compound;
-      }
-    }
-
-    refreshOrder();
-
-    if (cautionDeployedThisLap) {
-      // The field bunches up behind the safety car, and every strategy built on
-      // a comfortable gap is suddenly worthless. This is the drama engine.
-      //
-      // Only cars still circulating are bunched: a car that has already taken
-      // the flag is not on the road to be caught, and rewriting its race time
-      // would retroactively change a finished result.
-      //
-      // A caution closes gaps within a lap; it does not un-lap anybody. So the
-      // whole laps of a deficit are preserved and only the remainder is
-      // squeezed — otherwise a GT ten minutes down would rejoin on the leader's
-      // gearbox, which is not a safety car, it is a time machine.
-      const bunched = active();
-      const leader = bunched[0];
-      const referenceLapMs = leader?.lastLapMs && leader.lastLapMs > 0 ? leader.lastLapMs : track.baseLapMs;
-      if (leader) {
-        const seenAtDeficit = new Map<number, number>();
-        for (const car of bunched) {
-          const deficitMs = Math.max(0, car.raceTimeMs - leader.raceTimeMs);
-          const lapsDown = Math.floor(deficitMs / referenceLapMs);
-          const queue = (seenAtDeficit.get(lapsDown) ?? 0) + 1;
-          seenAtDeficit.set(lapsDown, queue);
-          car.raceTimeMs = leader.raceTimeMs + lapsDown * referenceLapMs + queue * COMPRESSED_GAP_MS;
-        }
-        refreshOrder();
-      }
-    }
-
-    for (const car of running()) {
-      events.push({
-        lap,
-        type: 'lapCompleted',
-        car: car.id,
-        lapTimeMs: Math.round(car.lastLapMs),
-        position: car.position,
-      });
-    }
-
-    // A lap-limited race ends on a lap count; a clock-limited one ends when
-    // every car still going has crossed the line after time expired.
-    const over = durationMs !== null ? active().length === 0 : lap >= totalLaps;
-    if (over) {
-      finished = true;
-      const winner = classify()[0];
-      if (winner) events.push({ lap, type: 'chequeredFlag', winner: winner.carId });
-    }
-
     return events.slice(emittedFrom);
   }
 
@@ -901,19 +1063,26 @@ export function createRace(config: RaceConfig, seed: string): Race {
       (!car.retired && mandatoryUnmet(car) ? MANDATORY_PENALTY_MS : 0) +
       car.penaltySeconds * 1000;
 
+    // Distance first, then time. Whoever went furthest has won, and only among
+    // cars that went the same distance does the clock decide.
+    //
+    // Sorting on time alone classified a field of Hypercars that had covered
+    // thirty-seven laps behind LMP2s that had covered thirty-five.
     const finishers = cars
       .filter((car) => !car.retired)
-      .sort(
-        (a, b) =>
-          b.lapsCompleted - a.lapsCompleted ||
-          a.raceTimeMs + penaltyFor(a) - (b.raceTimeMs + penaltyFor(b)),
-      );
+      .sort((a, b) => {
+        if (a.lapsCompleted !== b.lapsCompleted) return b.lapsCompleted - a.lapsCompleted;
+        const aTime = (a.finishedAtMs ?? Number.POSITIVE_INFINITY) + penaltyFor(a);
+        const bTime = (b.finishedAtMs ?? Number.POSITIVE_INFINITY) + penaltyFor(b);
+        if (aTime !== bTime) return aTime - bTime;
+        return b.distance - a.distance;
+      });
     const retired = cars
       .filter((car) => car.retired)
       .sort((a, b) => b.lapsCompleted - a.lapsCompleted || a.raceTimeMs - b.raceTimeMs);
 
     const winner = finishers[0];
-    const winnerTime = winner ? winner.raceTimeMs + penaltyFor(winner) : 0;
+    const winnerTime = winner ? (winner.finishedAtMs ?? winner.raceTimeMs) + penaltyFor(winner) : 0;
 
     const seenPerClass = new Map<string, number>();
     return [...finishers, ...retired].map((car, index) => {
@@ -928,10 +1097,13 @@ export function createRace(config: RaceConfig, seed: string): Race {
         driverId: car.driverId,
         classId: car.classId,
         lapsCompleted: car.lapsCompleted,
-        raceTimeMs: Math.round(car.raceTimeMs + penaltyMs),
+        raceTimeMs: Math.round((car.finishedAtMs ?? car.raceTimeMs) + penaltyMs),
         gapToWinnerMs: car.retired
           ? 0
-          : Math.max(0, Math.round(car.raceTimeMs + penaltyMs - winnerTime)),
+          : Math.max(
+              0,
+              Math.round((car.finishedAtMs ?? car.raceTimeMs) + penaltyMs - winnerTime),
+            ),
         bestLapMs: Number.isFinite(car.bestLapMs) ? Math.round(car.bestLapMs) : 0,
         pitStops: car.pitStops,
         penaltyMs,
@@ -956,7 +1128,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
       cars: cars
         .slice()
         .sort((a, b) => a.position - b.position)
-        .map((car) => ({ ...car }) as CarState),
+        .map((car) => ({ ...car, inPit: car.pitUntilMs !== null }) as CarState),
     };
   }
 
@@ -966,6 +1138,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
     config,
     state: snapshot,
     tick,
+    advance,
+    clock: () => clockMs,
     isFinished: () => finished,
     events: () => events,
     allocationOf: (carId) => ({

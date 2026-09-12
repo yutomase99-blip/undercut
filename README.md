@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 274 tests, including a statistical balance suite
+npm test           # 277 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -104,6 +104,22 @@ A six-hour race at Vantor Ring, for reference:
 
 Around 6% of the field fails to finish, across ten or eleven stops and a driver
 change at every one.
+
+## The race runs on a clock
+
+A lap used to be the smallest thing that happened. Positions, gaps, overtakes,
+incidents and pit stops were all decided at once, and the interface smoothed the
+result afterwards — so nothing could be watched, because nothing happened in
+between.
+
+Cars now carry a distance that grows continuously. Pace is still settled a lap
+at a time, which is where tyres, fuel and strategy live, but where a car *is*
+changes every step. Passes happen at the three places on each circuit where
+passing happens, incidents happen at the moment they happen, and a pit stop is a
+car standing still for exactly as long as the stop takes.
+
+Every event carries the moment it occurred, so the race can be watched at real
+time — 1× is genuinely one second per second — or wound forward to 30×.
 
 ## Qualifying
 

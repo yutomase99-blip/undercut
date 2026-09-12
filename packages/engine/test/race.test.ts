@@ -54,27 +54,38 @@ describe('race simulation', () => {
     for (const car of finishers) expect(car.pitStops).toBeGreaterThanOrEqual(1);
   });
 
-  it('steps one lap at a time and reports progress', () => {
+  it('steps one lap at a time at the front, and reports progress', () => {
     const race = createRace(config(10), 'race-6');
     expect(race.state().lap).toBe(0);
     race.tick();
     expect(race.state().lap).toBe(1);
-    expect(race.state().cars.every((c) => c.lapsCompleted === 1 || c.retired)).toBe(true);
+    // A lap at the front is not a lap for everybody: the field is spread out,
+    // and the cars at the back are still short of the line.
+    const leader = race.state().cars.find((c) => !c.retired)!;
+    expect(leader.lapsCompleted).toBe(1);
     while (!race.isFinished()) race.tick();
     expect(race.state().lap).toBe(10);
     expect(race.result().classification).toHaveLength(defaultGrid().length);
   });
 
-  it('accepts a pit command and executes it on the next lap', () => {
+  it('accepts a pit command and serves it at the next time of asking', () => {
+    // A stop is no longer instantaneous: the car has to reach the pit entry and
+    // then stand there for as long as the stop takes.
     const race = createRace(config(20), 'race-7');
     race.tick();
     const car = race.state().cars[0]!;
     race.issue({ type: 'pit', car: car.id, compound: 'hard' });
-    race.tick();
+
+    let guard = 0;
+    while (guard < 4 && race.state().cars.find((c) => c.id === car.id)!.pitStops === 0) {
+      race.tick();
+      guard += 1;
+    }
+
     const after = race.state().cars.find((c) => c.id === car.id)!;
     expect(after.pitStops).toBe(1);
     expect(after.compound).toBe('hard');
-    expect(after.tyreAgeLaps).toBe(0);
+    expect(after.tyreAgeLaps).toBeLessThan(1);
   });
 
   it('accepts a pace command and keeps it until changed', () => {

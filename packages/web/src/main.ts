@@ -54,15 +54,13 @@ function championship(): Championship {
 }
 
 /**
- * Wall-clock duration of one simulated lap at 1×.
+ * How much race time passes for each second you watch.
  *
- * This was 1.6 seconds, which is not a race, it is a results ticker. A lap has
- * to last long enough to watch a gap close over several of them, or a battle
- * never exists on screen — it turns up afterwards as a position that changed
- * while you were reading something else.
+ * 1x is real time: a seventy-three second lap takes seventy-three seconds. The
+ * race runs on its own clock now rather than in lap-sized jumps, so this is a
+ * genuine speed rather than a redraw interval.
  */
-const LAP_WALL_MS = 6000;
-const SPEEDS = [0.5, 1, 2, 4, 8];
+const SPEEDS = [1, 2, 5, 10, 30];
 /** Gap under which two cars are considered to be actually fighting. */
 const BATTLE_GAP_MS = 1200;
 
@@ -370,10 +368,8 @@ function renderRace(options: RaceOptions): void {
   map.fit();
 
   /* ---- live state ---- */
-  let speed = 1;
+  let speed = 2;
   let paused = false;
-  let lapProgress = 0;
-  let lastTickAt = performance.now();
   let bestLapOverall = Number.POSITIVE_INFINITY;
   let armedCompound: CompoundId | null = null;
   /** Tyre level the last warning was issued at, so the engineer nags once per set. */
@@ -391,33 +387,26 @@ function renderRace(options: RaceOptions): void {
    * a slow machine, and stops outright in a background tab — the clock would
    * belong to the renderer instead of to the race.
    */
-  let tickTimer: number | undefined;
-
-  function restartClock(): void {
-    if (tickTimer !== undefined) window.clearInterval(tickTimer);
-    tickTimer = undefined;
-    if (paused || race.isFinished()) return;
-    lastTickAt = performance.now();
-    tickTimer = window.setInterval(() => {
-      lastTickAt = performance.now();
-      doTick();
-      if (race.isFinished() && tickTimer !== undefined) {
-        window.clearInterval(tickTimer);
-        tickTimer = undefined;
-      }
-    }, LAP_WALL_MS / speed);
-  }
+  /**
+   * The race advances on a timer, and only the drawing happens on frames.
+   *
+   * Tying it to the frame loop puts the race clock at the mercy of the
+   * renderer: a throttled or hidden tab runs the race in slow motion, which is
+   * the same mistake as tying lap length to redraws, one layer down.
+   */
+  let lastAdvanceAt = performance.now();
+  const raceTimer = { id: 0 };
 
   function syncTransport(): void {
     pauseButton.textContent = paused ? 'RESUME' : 'PAUSE';
     speedButtons.forEach((button, index) => {
       button.setAttribute('aria-pressed', String(SPEEDS[index] === speed));
     });
-    restartClock();
   }
 
   pauseButton.addEventListener('click', () => {
     paused = !paused;
+    lastAdvanceAt = performance.now();
     syncTransport();
   });
 
@@ -586,7 +575,7 @@ function renderRace(options: RaceOptions): void {
 
   /** Once a lap: everything that only changes when a lap is completed. */
   function renderTower(state: ReturnType<Race['state']>): void {
-    const leaderLaps = state.cars.find((c) => !c.retired)?.lapsCompleted ?? 0;
+    const leaderDistance = state.cars.find((c) => !c.retired)?.distance ?? 0;
 
     for (const car of state.cars) {
       const row = towerRowFor(car.id);
@@ -617,11 +606,14 @@ function renderRace(options: RaceOptions): void {
         <span class="tyre-dot" style="background:${look.colour}">${look.letter}</span>
         <span class="tyre-age">${Math.floor(car.tyreAgeLaps)}L</span>`;
 
-      row.prevToLeader = row.toLeader;
-      row.prevToAhead = row.toAhead;
+      row.prevToLeader = car.gapToLeaderMs;
+      row.prevToAhead = car.gapAheadMs;
       row.toLeader = car.gapToLeaderMs;
       row.toAhead = car.gapAheadMs;
-      row.lapsDown = car.retired ? 0 : leaderLaps - car.lapsCompleted;
+      // Measured in road, not in counters: on the opening lap the leader has
+      // completed one and everybody else has completed none, which does not
+      // make the whole field a lap down.
+      row.lapsDown = car.retired ? 0 : Math.floor(Math.max(0, leaderDistance - car.distance));
       row.retired = car.retired;
       row.leading = !car.retired && car.position === 1;
       row.threat.style.color = team.colour;
@@ -635,7 +627,7 @@ function renderRace(options: RaceOptions): void {
       current.length !== ordered.length || ordered.some((node, index) => current[index] !== node);
     if (changed) towerRows.replaceChildren(...ordered);
 
-    animateTower(0);
+    animateTower(1);
   }
 
   /** Every frame: the gaps, easing from last lap's value towards this lap's. */
@@ -859,13 +851,8 @@ function renderRace(options: RaceOptions): void {
     cautionBadge.className = `badge${state.caution === 'deployed' ? ' badge--caution' : ''}`;
   }
 
-  function doTick(): void {
-    const events = race.tick();
-    absorb(events);
-    const state = race.state();
-    for (const car of state.cars) {
-      if (Number.isFinite(car.bestLapMs)) bestLapOverall = Math.min(bestLapOverall, car.bestLapMs);
-    }
+  /** The engineer's eye on the player's car, run once a frame. */
+  function watchPlayerCar(state: ReturnType<Race['state']>): void {
     const player = state.cars.find((c) => c.id === playerCarId);
     if (player && player.pitStops > 0 && armedCompound && player.compound === armedCompound) {
       armedCompound = null;
@@ -903,24 +890,13 @@ function renderRace(options: RaceOptions): void {
         lastFuelWarning = 6;
       }
     }
-    renderStrip(state);
-    renderTower(state);
-    renderWall(state);
-    renderRadio();
-
-    if (race.isFinished()) {
-      if (tickTimer !== undefined) window.clearInterval(tickTimer);
-      window.setTimeout(() => renderResults(race, playerCarId, options), 1400);
-    }
   }
 
   /** Closest two chips are allowed to sit, as a share of the lap. */
   const MIN_CHIP_SEPARATION = 0.011;
 
   function mapCars(state: ReturnType<Race['state']>): MapCar[] {
-    const leader = state.cars.find((c) => !c.retired);
-    const referenceLapMs = leader?.lastLapMs && leader.lastLapMs > 0 ? leader.lastLapMs : track.baseLapMs;
-    const running = state.cars.filter((car) => !car.retired);
+    const running = state.cars.filter((car) => !car.retired && !car.inPit);
 
     // Cars are placed around the lap by their gap to the leader, so the map
     // tells the same story as the timing tower. On the opening laps the whole
@@ -929,7 +905,8 @@ function renderRace(options: RaceOptions): void {
     // running order is never altered, only the spacing.
     let previous = Number.POSITIVE_INFINITY;
     return running.map((car) => {
-      const trueFraction = lapProgress - car.gapToLeaderMs / referenceLapMs;
+      // Straight off the road: the engine knows exactly where each car is.
+      const trueFraction = car.distance;
       const spaced = Math.min(trueFraction, previous - MIN_CHIP_SEPARATION);
       previous = spaced;
       return {
@@ -942,12 +919,30 @@ function renderRace(options: RaceOptions): void {
     });
   }
 
-  function frame(now: number): void {
-    if (!paused && !race.isFinished()) {
-      // Frames only interpolate between laps; they never advance the race.
-      lapProgress = Math.min(1, (now - lastTickAt) / (LAP_WALL_MS / speed));
+  function advanceRace(): void {
+    const now = performance.now();
+    const elapsed = Math.min(500, now - lastAdvanceAt);
+    lastAdvanceAt = now;
+    if (paused || race.isFinished()) return;
+
+    absorb(race.advance(elapsed * speed));
+    const state = race.state();
+    for (const car of state.cars) {
+      if (Number.isFinite(car.bestLapMs)) bestLapOverall = Math.min(bestLapOverall, car.bestLapMs);
     }
-    animateTower(lapProgress);
+    watchPlayerCar(state);
+    renderStrip(state);
+    renderTower(state);
+    renderWall(state);
+    renderRadio();
+
+    if (race.isFinished()) {
+      window.clearInterval(raceTimer.id);
+      window.setTimeout(() => renderResults(race, playerCarId, options), 1600);
+    }
+  }
+
+  function frame(): void {
     map.render(mapCars(race.state()));
     requestAnimationFrame(frame);
   }
@@ -956,6 +951,7 @@ function renderRace(options: RaceOptions): void {
     if (event.code === 'Space') {
       event.preventDefault();
       paused = !paused;
+      lastAdvanceAt = performance.now();
       syncTransport();
     }
   });
@@ -975,6 +971,7 @@ function renderRace(options: RaceOptions): void {
       : `<strong>Lights out.</strong> ${lengthNote} at ${track.name}.`,
   );
   renderRadio();
+  raceTimer.id = window.setInterval(advanceRace, 40);
   requestAnimationFrame(frame);
 }
 
