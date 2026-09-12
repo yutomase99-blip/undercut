@@ -304,7 +304,39 @@ does send most of a field into the pits at once; counting those laps measured
 the safety car rather than the forecast, which is what the test was written to
 watch.
 
-## 17. Delivery
+## 17. Setup and the stewards
+
+Two additions that give the existing systems something to push against.
+
+**Setup.** A weekend opens with one number: how much wing. Each circuit has an
+amount it wants, derived from how hard it is to pass there, and being wrong
+costs lap time quadratically in either direction. Less wing is kinder on tyres,
+lighter on fuel, and quicker where passes happen — so stripping the car is a
+real option, and not a free one. The player is never told the optimum; their
+engineers offer a reading as accurate as the team is well run, exactly as the
+forecast does.
+
+The two constants had to be scaled against each other. A 900ms straight-line
+advantage against a 1400ms penalty made "strip the car" the right answer
+everywhere, because a stripped car passed whoever it liked and finished ahead of
+the setup it should have run. It is now 350ms against 1800ms.
+
+**The stewards.** Running wide earns a warning; the fourth is five seconds. The
+chance depends on the driver, the pace mode they are on, and how walled-in the
+circuit is. A scruffy stop can earn an unsafe release.
+
+The first version was unreachable. At a base rate of 0.012 a car averaged a
+quarter of a warning across a race and never came close to the four a penalty
+takes: the mechanic existed and could not happen, which is worse than not having
+it. That is the third time a feature has been built and left unreachable —
+after the wet-weather model and the crossover — and it is worth naming as a
+pattern rather than an accident.
+
+Warnings and penalties are stated by the engine as facts, without radio calls.
+Twenty cars running wide would drown the team radio in other people's business,
+so the interface decides which of them its own driver hears about.
+
+## 18. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

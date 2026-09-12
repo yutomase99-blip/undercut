@@ -596,3 +596,5 @@ input[type='text'], input[type='number'] {
 .wing__step--suggested .wing__bar { background: var(--green); }
 .wing__bar { display: block; width: 70%; background: var(--dimmer); border-radius: 1px; }
 .wing__ends { display: flex; justify-content: space-between; }
+
+.row__penalty { font-size: 10px; font-weight: 700; color: var(--red); margin-left: 6px; }

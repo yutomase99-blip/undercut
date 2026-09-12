@@ -44,6 +44,12 @@ import {
   type ForecastEntry,
 } from './weather.ts';
 import { cautionFollows, rollRetirement } from './incidents.ts';
+import {
+  LIMIT_WARNINGS_ALLOWED,
+  PENALTY_SECONDS,
+  trackLimitChance,
+  unsafeReleaseChance,
+} from './penalties.ts';
 import { decideStrategy, plannedStint } from '../ai/strategist.ts';
 
 /** Closest two cars will run. Nobody drives through anybody. */
@@ -261,6 +267,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
       stintSeconds: 0,
       driversUsed: [entry.driverId],
       finished: false,
+      penaltySeconds: 0,
+      trackLimitWarnings: 0,
       roster,
       rosterIndex: 0,
       fuelCapacityKg,
@@ -579,6 +587,16 @@ export function createRace(config: RaceConfig, seed: string): Race {
           car: car.id,
           message: `Box, box. ${COMPOUNDS[car.pendingPit].label} for ${car.driver.name}.`,
         });
+        if (streams.pitCrew.chance(unsafeReleaseChance(car.team))) {
+          car.penaltySeconds += PENALTY_SECONDS;
+          events.push({
+            lap,
+            type: 'penalty',
+            car: car.id,
+            reason: 'unsafeRelease',
+            seconds: PENALTY_SECONDS,
+          });
+        }
       }
 
       car.lastBreakdown = breakdown;
@@ -655,6 +673,32 @@ export function createRace(config: RaceConfig, seed: string): Race {
       provisional.set(car.id, time);
       previousTime = time;
       previousId = car.id;
+    }
+
+    // The stewards. Pushing is already paid for in rubber and fuel; this is
+    // what makes it occasionally cost five seconds as well.
+    for (const car of field) {
+      if (underCaution) continue;
+      const wide = streams.incident.chance(
+        trackLimitChance(car.driver, car.paceMode, track.overtakingDifficulty),
+      );
+      if (!wide) continue;
+      car.trackLimitWarnings += 1;
+      // Stated as a fact, without a radio call. Twenty cars running wide would
+      // drown the team radio in other people's business; the interface decides
+      // which of these its own driver hears about.
+      if (car.trackLimitWarnings <= LIMIT_WARNINGS_ALLOWED) {
+        events.push({ lap, type: 'warning', car: car.id, count: car.trackLimitWarnings });
+      } else {
+        car.penaltySeconds += PENALTY_SECONDS;
+        events.push({
+          lap,
+          type: 'penalty',
+          car: car.id,
+          reason: 'trackLimits',
+          seconds: PENALTY_SECONDS,
+        });
+      }
     }
 
     for (const car of field) {
@@ -818,7 +862,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
   function classify(): Classification[] {
     const penaltyFor = (car: CarRuntime) =>
-      !car.retired && mandatoryUnmet(car) ? MANDATORY_PENALTY_MS : 0;
+      (!car.retired && mandatoryUnmet(car) ? MANDATORY_PENALTY_MS : 0) +
+      car.penaltySeconds * 1000;
 
     const finishers = cars
       .filter((car) => !car.retired)
