@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 234 tests, including a statistical balance suite
+npm test           # 246 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -168,6 +168,21 @@ stripped bare averages P10.7.
 
 You are never told the optimum. Your engineers offer a reading, and it is
 exactly as good as your team is — the same bargain the weather forecast makes.
+
+## The stewards
+
+Pushing already costs rubber and fuel. It should occasionally cost five seconds
+too, or the only reason not to run flat out is arithmetic rather than nerve.
+
+Run wide and you get a warning; the fourth is a five-second penalty. How often
+depends on the driver, how hard they are being asked to go, and the circuit —
+Aurora Bay, walled in on both sides, hands out around eight times as many
+track-limit penalties as open, forgiving Vantor Ring. A scruffy pit stop can
+also earn an unsafe release.
+
+Penalties are added at the flag and shown against the car on the timing tower
+and in the classification, so a race lost in the stewards' room is a race you
+can see being lost.
 
 ## A drying track
 

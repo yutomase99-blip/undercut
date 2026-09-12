@@ -360,6 +360,8 @@ function renderRace(options: RaceOptions): void {
   /** Laps of fuel at the last warning, reset by each refuel. */
   let lastFuelWarning = Number.POSITIVE_INFINITY;
   const radioLines: { lap: number; html: string }[] = [];
+  /** Seconds of penalty each car is carrying, for the timing tower. */
+  const penalties = new Map<string, number>();
 
   /**
    * The race advances on a timer, not on the animation frame.
@@ -438,6 +440,37 @@ function renderRace(options: RaceOptions): void {
             );
           }
           break;
+        case 'warning':
+          // Only your own driver's business. Twenty cars running wide would
+          // bury everything else on the radio.
+          if (event.car === playerCarId) {
+            pushRadio(
+              event.lap,
+              event.count >= 3
+                ? '<strong>Track limits — final warning.</strong> One more and it is five seconds.'
+                : `Track limits. That is warning ${event.count} of 3.`,
+            );
+          }
+          break;
+        case 'penalty': {
+          penalties.set(event.car, (penalties.get(event.car) ?? 0) + event.seconds);
+          const who = event.car === playerCarId ? 'We have' : `${nameOf(event.car)} has`;
+          const what =
+            event.reason === 'trackLimits'
+              ? 'track limits'
+              : event.reason === 'unsafeRelease'
+                ? 'an unsafe release'
+                : 'causing a collision';
+          if (event.car === playerCarId) {
+            pushRadio(
+              event.lap,
+              `<strong>${event.seconds}-second penalty.</strong> ${who} been penalised for ${what}.`,
+            );
+          } else {
+            pushRadio(event.lap, `${who} a ${event.seconds}-second penalty — ${what}.`);
+          }
+          break;
+        }
         case 'chequeredFlag':
           pushRadio(event.lap, `<strong>Chequered flag.</strong> ${nameOf(event.winner)} takes it.`);
           break;
@@ -484,6 +517,7 @@ function renderRace(options: RaceOptions): void {
           : lapsDown > 0
             ? `+${lapsDown} LAP${lapsDown > 1 ? 'S' : ''}`
             : gap(car.gapToLeaderMs);
+      const penalty = penalties.get(car.id) ?? 0;
       const classTag =
         options.multiClass && CLASS_TAG[car.classId]
           ? `<span class="class-tag" style="color:${CLASS_COLOUR[car.classId]}">${CLASS_TAG[car.classId]}</span>`
@@ -493,7 +527,7 @@ function renderRace(options: RaceOptions): void {
         <span class="row__pos">${car.retired ? '—' : car.position}</span>
         <span class="row__who">
           <span class="row__colour" style="background:${team.colour}"></span>
-          <span class="row__name">${driver.name}${classTag}</span>
+          <span class="row__name">${driver.name}${classTag}${penalty > 0 ? `<span class="row__penalty mono">+${penalty}s</span>` : ''}</span>
         </span>
         <span class="row__gap">${gapText}</span>
         <span class="${lapClass}">${car.retired ? '' : lapTime(car.lastLapMs)}</span>
@@ -872,6 +906,10 @@ function renderResults(race: Race, playerCarId: string, options: RaceOptions): v
     const classCell = options.multiClass
       ? `<td><span class="class-tag" style="color:${CLASS_COLOUR[car.classId]}">${CLASS_TAG[car.classId] ?? car.classId}</span> P${car.classPosition}</td>`
       : '';
+    // A penalty that cost somebody places belongs in the result, not just in
+    // the radio traffic they may have missed.
+    const penaltyNote =
+      car.penaltyMs > 0 ? ` <span class="row__penalty mono">+${Math.round(car.penaltyMs / 1000)}s</span>` : '';
     const resultCell = car.retired
       ? `DNF · ${car.retiredCause}`
       : options.multiClass
@@ -882,7 +920,7 @@ function renderResults(race: Race, playerCarId: string, options: RaceOptions): v
     row.innerHTML = `
       <td>${car.retired ? '—' : car.position}</td>
       ${classCell}
-      <td class="name">${driverById(car.driverId).name}</td>
+      <td class="name">${driverById(car.driverId).name}${penaltyNote}</td>
       <td>${teamById(car.teamId).name}</td>
       <td>${resultCell}</td>
       <td>${lapTime(car.bestLapMs)}</td>

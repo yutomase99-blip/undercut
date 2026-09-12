@@ -13,6 +13,7 @@ export type CompoundId = 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
 export type WeatherState = 'dry' | 'damp' | 'wet';
 export type PaceMode = 'push' | 'hold' | 'save';
 export type RetirementCause = 'mechanical' | 'collision' | 'driverError' | 'outOfFuel';
+export type PenaltyReason = 'trackLimits' | 'unsafeRelease' | 'collision';
 
 /** A tyre compound's performance envelope. */
 export interface Compound {
@@ -158,6 +159,10 @@ export interface CarState {
   driversUsed: DriverId[];
   /** True once this car has taken the flag. */
   finished: boolean;
+  /** Time penalties earned, in seconds, added to the race at the flag. */
+  penaltySeconds: number;
+  /** Track-limit warnings on the board. Three and the next one costs time. */
+  trackLimitWarnings: number;
 }
 
 export type CautionPhase = 'none' | 'deployed' | 'ending';
@@ -191,6 +196,8 @@ export type RaceEvent =
   | { lap: number; type: 'weather'; from: WeatherState; to: WeatherState }
   | { lap: number; type: 'retirement'; car: CarId; cause: RetirementCause }
   | { lap: number; type: 'driverChange'; car: CarId; from: DriverId; to: DriverId }
+  | { lap: number; type: 'warning'; car: CarId; count: number }
+  | { lap: number; type: 'penalty'; car: CarId; reason: PenaltyReason; seconds: number }
   | { lap: number; type: 'radio'; car: CarId; message: string }
   | { lap: number; type: 'chequeredFlag'; winner: CarId };
 
