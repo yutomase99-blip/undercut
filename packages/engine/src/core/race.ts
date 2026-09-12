@@ -26,7 +26,7 @@ import {
 import { driverById, teamById } from '../content/grid.ts';
 import { createStreams, type Streams } from '../rng/streams.ts';
 import { computeLapTime, PACE_FUEL_FACTOR, PACE_WEAR_FACTOR } from './lapTime.ts';
-import { tyreConditionPct } from './tyres.ts';
+import { tyreConditionPct, tyreFailureChance } from './tyres.ts';
 import { overtakeChance } from './overtake.ts';
 import { pitStopMs, totalPitLossMs } from './pit.ts';
 import { suitableCompounds } from './weather.ts';
@@ -81,6 +81,8 @@ const REPASS_COOLDOWN_LAPS = 2;
 const SAFETY_CAR_FACTOR = 1.4;
 /** Gap the field is bunched to behind the safety car. */
 const COMPRESSED_GAP_MS = 900;
+/** Time lost limping back to the pits on a failed tyre. */
+const TYRE_FAILURE_LOSS_MS = 22_000;
 /** Added to a car that finishes without serving a mandatory compound change. */
 export const MANDATORY_PENALTY_MS = 30_000;
 /** Time to put one kilogram of fuel in, where refuelling is allowed. */
@@ -800,6 +802,38 @@ export function createRace(config: RaceConfig, seed: string): Race {
         car.tyreAgeLaps,
         track.tyreWearFactor,
       );
+
+      // A set run past the end of its life does not just go slowly: it lets go.
+      // The car limps to the pits and the stint is over whether the pit wall
+      // had planned it or not.
+      if (
+        !car.retired &&
+        !car.finished &&
+        streams.mechanical.chance(
+          tyreFailureChance(COMPOUNDS[car.compound], car.tyreAgeLaps, track.tyreWearFactor),
+        )
+      ) {
+        car.raceTimeMs += TYRE_FAILURE_LOSS_MS;
+        events.push({
+          lap,
+          type: 'tyreFailure',
+          car: car.id,
+          compound: car.compound,
+          ageLaps: Math.round(car.tyreAgeLaps),
+        });
+        events.push({
+          lap,
+          type: 'radio',
+          car: car.id,
+          message: `${car.driver.name}: the tyre has gone. Limping back to the pits.`,
+        });
+        const replacement = availableCompound(
+          car.allocation,
+          car.compound,
+          regulations.tyreRules.allowedCompounds,
+        );
+        car.pendingPit = replacement ?? car.compound;
+      }
     }
 
     refreshOrder();

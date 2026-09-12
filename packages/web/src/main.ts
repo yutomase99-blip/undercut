@@ -14,7 +14,7 @@ import {
   type RaceResult,
 } from '@undercut/engine';
 import { createTrackMap, type MapCar } from './trackMap.ts';
-import { clock, COMPOUND_LOOK, gap, lapTime, WEATHER_LABEL } from './format.ts';
+import { clock, COMPOUND_LOOK, gap, lapTime, towerGap, WEATHER_LABEL } from './format.ts';
 import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './championship.ts';
 import { renderSeasonHub, renderSeasonSetup, type SeasonDeps } from './seasonUi.ts';
 import { renderQualifying } from './qualifyingUi.ts';
@@ -52,9 +52,18 @@ function championship(): Championship {
   return CHAMPIONSHIPS.find((c) => c.id === setup.championshipId) ?? CHAMPIONSHIPS[0]!;
 }
 
-/** Wall-clock duration of one simulated lap at 1×. */
-const LAP_WALL_MS = 1600;
-const SPEEDS = [1, 2, 4, 8];
+/**
+ * Wall-clock duration of one simulated lap at 1×.
+ *
+ * This was 1.6 seconds, which is not a race, it is a results ticker. A lap has
+ * to last long enough to watch a gap close over several of them, or a battle
+ * never exists on screen — it turns up afterwards as a position that changed
+ * while you were reading something else.
+ */
+const LAP_WALL_MS = 6000;
+const SPEEDS = [0.5, 1, 2, 4, 8];
+/** Gap under which two cars are considered to be actually fighting. */
+const BATTLE_GAP_MS = 1200;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -349,7 +358,7 @@ function renderRace(options: RaceOptions): void {
   map.fit();
 
   /* ---- live state ---- */
-  let speed = 2;
+  let speed = 1;
   let paused = false;
   let lapProgress = 0;
   let lastTickAt = performance.now();
@@ -440,6 +449,14 @@ function renderRace(options: RaceOptions): void {
             );
           }
           break;
+        case 'tyreFailure':
+          pushRadio(
+            event.lap,
+            event.car === playerCarId
+              ? `<strong>The tyre has gone.</strong> ${event.ageLaps} laps on that set. Limping to the pits.`
+              : `<strong>${nameOf(event.car)}</strong> has had a tyre let go.`,
+          );
+          break;
         case 'warning':
           // Only your own driver's business. Twenty cars running wide would
           // bury everything else on the radio.
@@ -489,73 +506,158 @@ function renderRace(options: RaceOptions): void {
     }
   }
 
+  /**
+   * The timing tower is built once and then animated.
+   *
+   * Rebuilding it each lap meant the gaps only ever moved in steps: a car was
+   * behind by 1.8s, then by 0.9s, with nothing in between — so a battle never
+   * happened on screen, it turned up already over as a position that had
+   * changed. Every gap now eases from its value last lap to its value this lap
+   * across the lap, and two cars closing on each other look like it.
+   */
+  interface TowerRow {
+    root: HTMLElement;
+    pos: HTMLElement;
+    colour: HTMLElement;
+    name: HTMLElement;
+    gap: HTMLElement;
+    lap: HTMLElement;
+    tyre: HTMLElement;
+    threat: HTMLElement;
+    prevToLeader: number;
+    toLeader: number;
+    prevToAhead: number;
+    toAhead: number;
+    lapsDown: number;
+    retired: boolean;
+    leading: boolean;
+  }
+
+  const towerByCar = new Map<string, TowerRow>();
+
+  function towerRowFor(carId: string): TowerRow {
+    const existing = towerByCar.get(carId);
+    if (existing) return existing;
+
+    const root = el('div', 'row');
+    const pos = el('span', 'row__pos');
+    const who = el('span', 'row__who');
+    const colour = el('span', 'row__colour');
+    const name = el('span', 'row__name');
+    who.append(colour, name);
+    const gapCell = el('span', 'row__gap');
+    const lapCell = el('span', 'row__lap');
+    const tyre = el('span', 'row__tyre');
+    const threat = el('span', 'row__threat');
+    root.append(pos, who, gapCell, lapCell, tyre, threat);
+
+    const row: TowerRow = {
+      root,
+      pos,
+      colour,
+      name,
+      gap: gapCell,
+      lap: lapCell,
+      tyre,
+      threat,
+      prevToLeader: 0,
+      toLeader: 0,
+      prevToAhead: 0,
+      toAhead: 0,
+      lapsDown: 0,
+      retired: false,
+      leading: false,
+    };
+    towerByCar.set(carId, row);
+    return row;
+  }
+
+  /** Once a lap: everything that only changes when a lap is completed. */
   function renderTower(state: ReturnType<Race['state']>): void {
-    towerRows.replaceChildren();
+    const leaderLaps = state.cars.find((c) => !c.retired)?.lapsCompleted ?? 0;
+
     for (const car of state.cars) {
+      const row = towerRowFor(car.id);
       const team = teamById(car.teamId);
       const driver = driverById(car.driverId);
-      const row = el('div', 'row');
-      if (car.id === playerCarId) row.classList.add('row--player');
-      if (car.retired) row.classList.add('row--out');
-
       const look = COMPOUND_LOOK[car.compound];
-      const isFastest = car.bestLapMs === bestLapOverall && Number.isFinite(car.bestLapMs);
-      const lapClass = isFastest
-        ? 'row__lap row__lap--best'
-        : car.lastLapMs === car.bestLapMs
-          ? 'row__lap row__lap--personal'
-          : 'row__lap';
-
-      // In a multi-class field the gap to a car you are not racing is noise:
-      // what matters is the class tag and how many laps down you are.
-      const leaderLaps = state.cars.find((c) => !c.retired)?.lapsCompleted ?? car.lapsCompleted;
-      const lapsDown = leaderLaps - car.lapsCompleted;
-      const gapText = car.retired
-        ? 'OUT'
-        : car.position === 1
-          ? '—'
-          : lapsDown > 0
-            ? `+${lapsDown} LAP${lapsDown > 1 ? 'S' : ''}`
-            : gap(car.gapToLeaderMs);
       const penalty = penalties.get(car.id) ?? 0;
       const classTag =
         options.multiClass && CLASS_TAG[car.classId]
           ? `<span class="class-tag" style="color:${CLASS_COLOUR[car.classId]}">${CLASS_TAG[car.classId]}</span>`
           : '';
 
-      row.innerHTML = `
-        <span class="row__pos">${car.retired ? '—' : car.position}</span>
-        <span class="row__who">
-          <span class="row__colour" style="background:${team.colour}"></span>
-          <span class="row__name">${driver.name}${classTag}${penalty > 0 ? `<span class="row__penalty mono">+${penalty}s</span>` : ''}</span>
-        </span>
-        <span class="row__gap">${gapText}</span>
-        <span class="${lapClass}">${car.retired ? '' : lapTime(car.lastLapMs)}</span>
-        <span class="row__tyre">
-          <span class="tyre-dot" style="background:${look.colour}">${look.letter}</span>
-          <span class="tyre-age">${Math.floor(car.tyreAgeLaps)}L</span>
-        </span>`;
+      row.root.classList.toggle('row--player', car.id === playerCarId);
+      row.root.classList.toggle('row--out', car.retired);
+      row.pos.textContent = car.retired ? '—' : String(car.position);
+      row.colour.style.background = team.colour;
+      row.name.innerHTML = `${driver.name}${classTag}${penalty > 0 ? `<span class="row__penalty mono">+${penalty}s</span>` : ''}`;
 
-      if (!car.retired && car.position > 1) {
-        const threat = el('span', 'row__threat');
-        const closeness = Math.max(0, 1 - Math.min(car.gapAheadMs, 3000) / 3000);
-        threat.style.color = team.colour;
-        threat.style.width = `${Math.round(closeness * 100)}%`;
-        threat.style.opacity = String(0.15 + closeness * 0.6);
-        row.append(threat);
+      const isFastest = car.bestLapMs === bestLapOverall && Number.isFinite(car.bestLapMs);
+      row.lap.className = isFastest
+        ? 'row__lap row__lap--best'
+        : car.lastLapMs === car.bestLapMs
+          ? 'row__lap row__lap--personal'
+          : 'row__lap';
+      row.lap.textContent = car.retired ? '' : lapTime(car.lastLapMs);
+
+      row.tyre.innerHTML = `
+        <span class="tyre-dot" style="background:${look.colour}">${look.letter}</span>
+        <span class="tyre-age">${Math.floor(car.tyreAgeLaps)}L</span>`;
+
+      row.prevToLeader = row.toLeader;
+      row.prevToAhead = row.toAhead;
+      row.toLeader = car.gapToLeaderMs;
+      row.toAhead = car.gapAheadMs;
+      row.lapsDown = car.retired ? 0 : leaderLaps - car.lapsCompleted;
+      row.retired = car.retired;
+      row.leading = !car.retired && car.position === 1;
+      row.threat.style.color = team.colour;
+    }
+
+    // The DOM is only reordered when the order actually changed, so the frames
+    // in between leave it alone.
+    const ordered = state.cars.map((car) => towerRowFor(car.id).root);
+    const current = Array.from(towerRows.children);
+    const changed =
+      current.length !== ordered.length || ordered.some((node, index) => current[index] !== node);
+    if (changed) towerRows.replaceChildren(...ordered);
+
+    animateTower(0);
+  }
+
+  /** Every frame: the gaps, easing from last lap's value towards this lap's. */
+  function animateTower(progress: number): void {
+    for (const row of towerByCar.values()) {
+      if (row.retired || row.leading || row.lapsDown > 0) {
+        row.gap.textContent = row.retired
+          ? 'OUT'
+          : row.leading
+            ? '—'
+            : `+${row.lapsDown} LAP${row.lapsDown > 1 ? 'S' : ''}`;
+        row.threat.style.width = '0%';
+        row.root.classList.remove('row--battle');
+        continue;
       }
 
-      towerRows.append(row);
+      const toLeader = row.prevToLeader + (row.toLeader - row.prevToLeader) * progress;
+      const toAhead = row.prevToAhead + (row.toAhead - row.prevToAhead) * progress;
+      row.gap.textContent = towerGap(toLeader);
+
+      const closeness = Math.max(0, 1 - Math.min(toAhead, 3000) / 3000);
+      row.threat.style.width = `${Math.round(closeness * 100)}%`;
+      row.threat.style.opacity = String(0.15 + closeness * 0.6);
+      // A battle is somebody closing, not merely somebody near. On the opening
+      // laps the whole field is within a second of the car ahead, and marking
+      // all of it marks nothing.
+      const closing = row.toAhead < row.prevToAhead - 50;
+      row.root.classList.toggle(
+        'row--battle',
+        toAhead > 0 && toAhead < BATTLE_GAP_MS && closing,
+      );
     }
   }
 
-  /**
-   * The pit wall is built once and updated in place.
-   *
-   * Rebuilding it every lap destroyed keyboard focus and hover state on the
-   * controls — the player would be reaching for "Soft" at the exact moment the
-   * button underneath them was replaced.
-   */
   const wallHead = el('div', 'wall__head');
   const wallDriver = el('span', 'wall__driver');
   const wallPos = el('span', 'wall__pos mono');
@@ -763,7 +865,13 @@ function renderRace(options: RaceOptions): void {
       if (player.tyreConditionPct > lastTyreWarning) lastTyreWarning = 100;
       const crossed = (level: number) =>
         player.tyreConditionPct <= level && lastTyreWarning > level && armedCompound === null;
-      if (crossed(10)) {
+      if (crossed(4)) {
+        pushRadio(
+          state.lap,
+          '<strong>There is nothing left on this set.</strong> Box now or it will let go.',
+        );
+        lastTyreWarning = 4;
+      } else if (crossed(10)) {
         pushRadio(state.lap, '<strong>These tyres are done.</strong> We are losing over a second a lap.');
         lastTyreWarning = 10;
       } else if (crossed(25)) {
@@ -827,6 +935,7 @@ function renderRace(options: RaceOptions): void {
       // Frames only interpolate between laps; they never advance the race.
       lapProgress = Math.min(1, (now - lastTickAt) / (LAP_WALL_MS / speed));
     }
+    animateTower(lapProgress);
     map.render(mapCars(race.state()));
     requestAnimationFrame(frame);
   }

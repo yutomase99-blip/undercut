@@ -1,8 +1,12 @@
 import type { Compound, CompoundId } from '../types.ts';
 
 /**
- * Compound envelopes. Softer rubber is faster and dies sooner; the cliff is
- * what forces a strategic decision rather than a arithmetic one.
+ * Compound envelopes. Softer rubber is faster and dies sooner.
+ *
+ * The cliff factors are deliberately steep. At three times the normal rate a
+ * set past its cliff was slow but perfectly usable, and the answer to "when do
+ * I box" could be "eventually". Past the cliff a tyre should be falling away
+ * fast enough that staying out is visibly costing you the race.
  */
 export const COMPOUNDS: Record<CompoundId, Compound> = {
   soft: {
@@ -12,7 +16,7 @@ export const COMPOUNDS: Record<CompoundId, Compound> = {
     warmupLaps: 1,
     degPerLapMs: 85,
     cliffLap: 14,
-    cliffFactor: 3.2,
+    cliffFactor: 5.5,
     weatherPenaltyMs: { dry: 0, damp: 4200, wet: 22000 },
   },
   medium: {
@@ -22,7 +26,7 @@ export const COMPOUNDS: Record<CompoundId, Compound> = {
     warmupLaps: 2,
     degPerLapMs: 52,
     cliffLap: 24,
-    cliffFactor: 3.0,
+    cliffFactor: 5,
     weatherPenaltyMs: { dry: 0, damp: 3900, wet: 21000 },
   },
   hard: {
@@ -32,7 +36,7 @@ export const COMPOUNDS: Record<CompoundId, Compound> = {
     warmupLaps: 4,
     degPerLapMs: 31,
     cliffLap: 36,
-    cliffFactor: 2.6,
+    cliffFactor: 4.5,
     weatherPenaltyMs: { dry: 0, damp: 3600, wet: 20000 },
   },
   intermediate: {
@@ -42,7 +46,7 @@ export const COMPOUNDS: Record<CompoundId, Compound> = {
     warmupLaps: 1,
     degPerLapMs: 70,
     cliffLap: 22,
-    cliffFactor: 2.4,
+    cliffFactor: 4.2,
     weatherPenaltyMs: { dry: 6500, damp: 0, wet: 5200 },
   },
   wet: {
@@ -52,7 +56,7 @@ export const COMPOUNDS: Record<CompoundId, Compound> = {
     warmupLaps: 1,
     degPerLapMs: 58,
     cliffLap: 26,
-    cliffFactor: 2.2,
+    cliffFactor: 4,
     weatherPenaltyMs: { dry: 14000, damp: 4300, wet: 0 },
   },
 };

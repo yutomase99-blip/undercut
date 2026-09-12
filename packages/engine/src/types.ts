@@ -196,6 +196,7 @@ export type RaceEvent =
   | { lap: number; type: 'weather'; from: WeatherState; to: WeatherState }
   | { lap: number; type: 'retirement'; car: CarId; cause: RetirementCause }
   | { lap: number; type: 'driverChange'; car: CarId; from: DriverId; to: DriverId }
+  | { lap: number; type: 'tyreFailure'; car: CarId; compound: CompoundId; ageLaps: number }
   | { lap: number; type: 'warning'; car: CarId; count: number }
   | { lap: number; type: 'penalty'; car: CarId; reason: PenaltyReason; seconds: number }
   | { lap: number; type: 'radio'; car: CarId; message: string }
