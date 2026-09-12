@@ -32,5 +32,12 @@ export interface Regulations {
     /** Probability per car per lap of an incident worth investigating. */
     incidentRatePerLap: number;
   };
+  /**
+   * How hard this category is on cars and drivers, against a sprint baseline
+   * of 1. Retirement is rolled per lap, so without this dial a 200-lap
+   * endurance race inherits three times a sprint's attrition and a quarter of
+   * the field fails to finish.
+   */
+  attritionScale: number;
   refuelling: boolean;
 }

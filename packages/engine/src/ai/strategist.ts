@@ -20,6 +20,12 @@ export interface StrategyView {
   reactionLaps: number;
   cautionDeployed: boolean;
   wearFactor: number;
+  /** Fuel aboard, and how much a lap costs. */
+  fuelKg: number;
+  fuelPerLapKg: number;
+  /** Seconds the driver aboard has been at the wheel, and the legal limit. */
+  stintSeconds: number;
+  maxStintSeconds: number | null;
   regulations: Regulations;
   rng: Rng;
 }
@@ -30,6 +36,10 @@ export interface StrategyDecision {
 }
 
 const MAX_STOPS = 3;
+/** Laps of fuel left at which a stop stops being optional. */
+const FUEL_RESERVE_LAPS = 2;
+/** Share of the legal stint after which the crew brings the car in. */
+const STINT_MARGIN = 0.85;
 
 /** Whether a tyre family matches the conditions at all. */
 function isWrongFamily(compound: CompoundId, weather: WeatherState): boolean {
@@ -71,9 +81,21 @@ export function decideStrategy(view: StrategyView): StrategyDecision {
     view.regulations.tyreRules.mandatoryCompoundChange && new Set(view.compoundsUsed).size < 2;
 
   let pitCompound: CompoundId | null = null;
-  const canStop = view.pitStops < MAX_STOPS && view.lapsRemaining > 1;
+  // A refuelling category has no sensible cap on stops: the race length decides
+  // how many you make, not a rule of thumb.
+  const stopsAllowed = view.regulations.refuelling ? Number.POSITIVE_INFINITY : MAX_STOPS;
+  const canStop = view.pitStops < stopsAllowed && view.lapsRemaining > 1;
 
-  if (canStop) {
+  const lapsOfFuelLeft = view.fuelPerLapKg > 0 ? view.fuelKg / view.fuelPerLapKg : Infinity;
+  const outOfFuelSoon = view.regulations.refuelling && lapsOfFuelLeft <= FUEL_RESERVE_LAPS;
+  const stintNearlyUp =
+    view.maxStintSeconds !== null && view.stintSeconds >= view.maxStintSeconds * STINT_MARGIN;
+
+  if (canStop && (outOfFuelSoon || stintNearlyUp)) {
+    // Fuel and the stint clock are not negotiable, so they are checked before
+    // anything to do with tyres.
+    pitCompound = chooseCompound(view);
+  } else if (canStop) {
     if (
       isWrongFamily(view.compound, view.weather) &&
       view.lapsRemaining > 2 &&

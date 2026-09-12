@@ -13,6 +13,7 @@ export const OPEN_WHEEL: Regulations = {
   stints: { maxDriverStintSeconds: null, minDriverCount: 1 },
   overtaking: { drsZones: 2, classDifferentialBonusMs: 0 },
   cautions: { kind: 'safetyCar', incidentRatePerLap: 0.0025 },
+  attritionScale: 1,
   refuelling: false,
 };
 

@@ -1,6 +1,7 @@
 import type {
   CarClass,
   CarId,
+  DriverId,
   CarState,
   CautionPhase,
   Classification,
@@ -57,6 +58,19 @@ const SAFETY_CAR_FACTOR = 1.4;
 const COMPRESSED_GAP_MS = 900;
 /** Added to a car that finishes without serving a mandatory compound change. */
 export const MANDATORY_PENALTY_MS = 30_000;
+/** Time to put one kilogram of fuel in, where refuelling is allowed. */
+const REFUEL_MS_PER_KG = 480;
+/** Time a driver change adds to a stop, over and above the fuel. */
+const DRIVER_CHANGE_MS = 12_000;
+/**
+ * Time a car loses per lap for each slower car circulating.
+ *
+ * Multi-class traffic is modelled statistically rather than encounter by
+ * encounter: the leaders lose a couple of tenths a lap threading through the
+ * slower classes, which is what makes a clean run through traffic worth
+ * something without simulating every single pass.
+ */
+const LAPPED_TRAFFIC_MS_PER_CAR = 12;
 
 interface CarRuntime extends CarState {
   team: Team;
@@ -71,6 +85,11 @@ interface CarRuntime extends CarState {
   paceEmaMs: number;
   /** Where the car started. Breaks ties before anyone has set a lap time. */
   gridPosition: number;
+  /** The crew, in the order they take over. */
+  roster: DriverId[];
+  rosterIndex: number;
+  /** Tank size, where the regulations allow refuelling. */
+  fuelCapacityKg: number;
 }
 
 export interface Race {
@@ -113,7 +132,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
   const track = config.track;
   const regulations = config.regulations;
   const totalLaps = resolveTotalLaps(config);
-  const startingFuelKg = track.fuelPerLapKg * totalLaps * 1.03;
+  const durationMs =
+    regulations.raceLength.kind === 'duration' ? regulations.raceLength.seconds * 1000 : null;
 
   const classes = new Map(regulations.classes.map((c) => [c.id, c]));
 
@@ -122,6 +142,15 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const driver = driverById(entry.driverId);
     const carClass = classes.get(entry.classId) ?? regulations.classes[0];
     if (!carClass) throw new Error('Regulations declare no classes');
+    const roster = entry.driverIds && entry.driverIds.length > 0 ? entry.driverIds : [entry.driverId];
+    // Where refuelling is allowed the car carries a tank, not a whole race.
+    const fuelCapacityKg = carClass.fuelCapacityKg ?? track.fuelPerLapKg * totalLaps * 1.03;
+    const startingFuelKg = regulations.refuelling
+      ? fuelCapacityKg
+      // Enough to finish with a little in hand: pushing burns more, and running
+      // a car dry on the last lap through no decision of the player's is not a
+      // strategy game, it is a trap.
+      : track.fuelPerLapKg * totalLaps * 1.08;
     return {
       id: entry.carId,
       teamId: entry.teamId,
@@ -153,6 +182,13 @@ export function createRace(config: RaceConfig, seed: string): Race {
       reactionLaps: streams.strategy.chance(team.pitCrewSkill * 0.55) ? 0 : 1 + streams.strategy.int(2),
       paceEmaMs: 0,
       gridPosition: 0,
+      classPosition: 0,
+      stintSeconds: 0,
+      driversUsed: [entry.driverId],
+      finished: false,
+      roster,
+      rosterIndex: 0,
+      fuelCapacityKg,
     };
   });
 
@@ -166,7 +202,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
   const qualifyingTimes = new Map<CarId, number>(
     cars.map((car) => [
       car.id,
-      (1 - car.team.carPerformance) * 2100 +
+      car.carClass.performanceOffsetMs +
+        (1 - car.team.carPerformance) * 2100 +
         (1 - car.driver.skill) * 1100 +
         streams.grid.normal(0, 260),
     ]),
@@ -195,14 +232,25 @@ export function createRace(config: RaceConfig, seed: string): Race {
   const lastPassedBy = new Map<CarId, { by: CarId; lap: number }>();
 
   const running = () => order.map((id) => byId.get(id)!).filter((car) => !car.retired);
+  /** Cars still circulating: not retired, and not yet across the finish. */
+  const active = () => running().filter((car) => !car.finished);
 
   function refreshOrder(): void {
-    // Grid position breaks the tie: before the first lap every car is on zero,
-    // and a stable sort would otherwise fall back to entry order and quietly
-    // throw away the entire qualifying result.
+    // Laps first, then elapsed time. In a race limited by the clock the field
+    // does not all cover the same distance, so time alone would rank a lapped
+    // GT ahead of the car that passed it.
+    //
+    // Grid position breaks the remaining tie: before the first lap every car is
+    // on zero, and a stable sort would otherwise fall back to entry order and
+    // quietly throw away the entire qualifying result.
     const live = cars
       .filter((c) => !c.retired)
-      .sort((a, b) => a.raceTimeMs - b.raceTimeMs || a.gridPosition - b.gridPosition);
+      .sort(
+        (a, b) =>
+          b.lapsCompleted - a.lapsCompleted ||
+          a.raceTimeMs - b.raceTimeMs ||
+          a.gridPosition - b.gridPosition,
+      );
     const out = cars
       .filter((c) => c.retired)
       .sort((a, b) => b.lapsCompleted - a.lapsCompleted || a.raceTimeMs - b.raceTimeMs);
@@ -218,6 +266,14 @@ export function createRace(config: RaceConfig, seed: string): Race {
     out.forEach((car, index) => {
       car.position = live.length + index + 1;
     });
+
+    // Class positions are what an endurance entrant actually races for.
+    const seenPerClass = new Map<string, number>();
+    for (const car of [...live, ...out]) {
+      const next = (seenPerClass.get(car.classId) ?? 0) + 1;
+      seenPerClass.set(car.classId, next);
+      car.classPosition = next;
+    }
   }
 
   function deployCaution(): void {
@@ -228,7 +284,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
   }
 
   function runStrategy(): void {
-    for (const car of running()) {
+    for (const car of active()) {
       if (car.id === config.playerCarId) continue;
       const decision = decideStrategy({
         compound: car.compound,
@@ -237,13 +293,27 @@ export function createRace(config: RaceConfig, seed: string): Race {
         pitStops: car.pitStops,
         compoundsUsed: car.compoundsUsed,
         gapAheadMs: car.gapAheadMs,
-        lapsRemaining: totalLaps - car.lapsCompleted,
+        // In a race against the clock, "laps remaining" is a projection from
+        // the time left rather than a subtraction from a schedule.
+        lapsRemaining:
+          durationMs !== null
+            ? Math.max(
+                0,
+                Math.ceil(
+                  (durationMs - car.raceTimeMs) / Math.max(1, car.lastLapMs || track.baseLapMs),
+                ),
+              )
+            : totalLaps - car.lapsCompleted,
         plannedStintLaps: car.plannedStintLaps,
         weather,
         lapsSinceWeatherChange: lap - weatherChangedAtLap,
         reactionLaps: car.reactionLaps,
         cautionDeployed: caution === 'deployed',
         wearFactor: track.tyreWearFactor,
+        fuelKg: car.fuelKg,
+        fuelPerLapKg: track.fuelPerLapKg,
+        stintSeconds: car.stintSeconds,
+        maxStintSeconds: regulations.stints.maxDriverStintSeconds,
         regulations,
         rng: streams.strategy,
       });
@@ -253,7 +323,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
   }
 
   function rollAttrition(): void {
-    for (const car of running()) {
+    for (const car of active()) {
       const cause = rollRetirement(
         car.team,
         car.driver,
@@ -261,6 +331,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
         car.paceMode,
         streams.mechanical,
         streams.incident,
+        regulations.attritionScale,
       );
       if (!cause) continue;
       car.retired = true;
@@ -307,7 +378,21 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const cautionDeployedThisLap = caution === 'deployed' && !cautionAtLapStart;
     const underCaution = caution === 'deployed';
 
-    const field = running();
+    const field = active();
+
+    // How much slower traffic each class has to deal with this lap.
+    const slowerCarsByClass = new Map<string, number>();
+    if (regulations.classes.length > 1) {
+      for (const carClass of regulations.classes) {
+        slowerCarsByClass.set(
+          carClass.id,
+          field.filter((c) => c.carClass.performanceOffsetMs > carClass.performanceOffsetMs).length,
+        );
+      }
+    }
+    const lappedTrafficMs = (car: CarRuntime) =>
+      (slowerCarsByClass.get(car.classId) ?? 0) * LAPPED_TRAFFIC_MS_PER_CAR;
+
     const rawLapMs = new Map<CarId, number>();
     const provisional = new Map<CarId, number>();
     const extraWear = new Map<CarId, number>();
@@ -328,14 +413,18 @@ export function createRace(config: RaceConfig, seed: string): Race {
           fuelKg: car.fuelKg,
           paceMode: car.paceMode,
           weather,
-          trafficMs: 0,
+          trafficMs: lappedTrafficMs(car),
           rng: streams.driverError,
         });
       }
 
       let total = breakdown.totalMs;
       if (car.pendingPit) {
-        const stationaryMs = pitStopMs(car.team, streams.pitCrew);
+        let stationaryMs = pitStopMs(car.team, streams.pitCrew);
+        if (regulations.refuelling) {
+          stationaryMs += Math.max(0, car.fuelCapacityKg - car.fuelKg) * REFUEL_MS_PER_KG;
+        }
+        if (car.roster.length > 1) stationaryMs += DRIVER_CHANGE_MS;
         total += totalPitLossMs(track, stationaryMs);
         pitLapIds.add(car.id);
         events.push({
@@ -456,7 +545,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
       const fuelMultiplier = underCaution ? 0.6 : PACE_FUEL_FACTOR[car.paceMode];
       car.fuelKg = Math.max(0, car.fuelKg - track.fuelPerLapKg * fuelMultiplier);
-      if (car.fuelKg < 1.5 && car.paceMode !== 'save') {
+      if (car.fuelKg < 1.5 && car.paceMode !== 'save' && !car.retired) {
         car.paceMode = 'save';
         car.manualPace = false;
         events.push({
@@ -467,6 +556,23 @@ export function createRace(config: RaceConfig, seed: string): Race {
         });
       }
 
+      // An empty tank ends the race for that car. Without this a pit wall that
+      // simply never calls a stop circulates on nothing and wins on strategy it
+      // never had to pay for.
+      if (car.fuelKg <= 0 && !car.retired) {
+        car.retired = true;
+        car.retiredCause = 'outOfFuel';
+        events.push({ lap, type: 'retirement', car: car.id, cause: 'outOfFuel' });
+        events.push({
+          lap,
+          type: 'radio',
+          car: car.id,
+          message: `${car.driver.name}: that's it, we're out of fuel. Stopping on track.`,
+        });
+      }
+
+      car.stintSeconds += lapTimeMs / 1000;
+
       if (car.pendingPit) {
         car.compound = car.pendingPit;
         car.compoundsUsed.push(car.pendingPit);
@@ -474,7 +580,30 @@ export function createRace(config: RaceConfig, seed: string): Race {
         car.pitStops += 1;
         car.pendingPit = null;
         car.plannedStintLaps = plannedStint(car.compound, track.tyreWearFactor, streams.strategy);
+
+        if (regulations.refuelling) car.fuelKg = car.fuelCapacityKg;
+
+        // The crew rotates at every stop, which is how a three-driver line-up
+        // gets through a long race inside the stint limits.
+        if (car.roster.length > 1) {
+          const from = car.driverId;
+          car.rosterIndex = (car.rosterIndex + 1) % car.roster.length;
+          const to = car.roster[car.rosterIndex]!;
+          car.driverId = to;
+          car.driver = driverById(to);
+          car.driversUsed.push(to);
+          car.stintSeconds = 0;
+          events.push({ lap, type: 'driverChange', car: car.id, from, to });
+          events.push({
+            lap,
+            type: 'radio',
+            car: car.id,
+            message: `${car.driver.name} takes over.`,
+          });
+        }
       }
+
+      if (durationMs !== null && car.raceTimeMs >= durationMs) car.finished = true;
 
       car.tyreConditionPct = tyreConditionPct(
         COMPOUNDS[car.compound],
@@ -488,12 +617,27 @@ export function createRace(config: RaceConfig, seed: string): Race {
     if (cautionDeployedThisLap) {
       // The field bunches up behind the safety car, and every strategy built on
       // a comfortable gap is suddenly worthless. This is the drama engine.
-      const live = running();
-      const leader = live[0];
+      //
+      // Only cars still circulating are bunched: a car that has already taken
+      // the flag is not on the road to be caught, and rewriting its race time
+      // would retroactively change a finished result.
+      //
+      // A caution closes gaps within a lap; it does not un-lap anybody. So the
+      // whole laps of a deficit are preserved and only the remainder is
+      // squeezed — otherwise a GT ten minutes down would rejoin on the leader's
+      // gearbox, which is not a safety car, it is a time machine.
+      const bunched = active();
+      const leader = bunched[0];
+      const referenceLapMs = leader?.lastLapMs && leader.lastLapMs > 0 ? leader.lastLapMs : track.baseLapMs;
       if (leader) {
-        live.forEach((car, index) => {
-          car.raceTimeMs = leader.raceTimeMs + index * COMPRESSED_GAP_MS;
-        });
+        const seenAtDeficit = new Map<number, number>();
+        for (const car of bunched) {
+          const deficitMs = Math.max(0, car.raceTimeMs - leader.raceTimeMs);
+          const lapsDown = Math.floor(deficitMs / referenceLapMs);
+          const queue = (seenAtDeficit.get(lapsDown) ?? 0) + 1;
+          seenAtDeficit.set(lapsDown, queue);
+          car.raceTimeMs = leader.raceTimeMs + lapsDown * referenceLapMs + queue * COMPRESSED_GAP_MS;
+        }
         refreshOrder();
       }
     }
@@ -508,7 +652,10 @@ export function createRace(config: RaceConfig, seed: string): Race {
       });
     }
 
-    if (lap >= totalLaps) {
+    // A lap-limited race ends on a lap count; a clock-limited one ends when
+    // every car still going has crossed the line after time expired.
+    const over = durationMs !== null ? active().length === 0 : lap >= totalLaps;
+    if (over) {
       finished = true;
       const winner = classify()[0];
       if (winner) events.push({ lap, type: 'chequeredFlag', winner: winner.carId });
@@ -541,10 +688,14 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const winner = finishers[0];
     const winnerTime = winner ? winner.raceTimeMs + penaltyFor(winner) : 0;
 
+    const seenPerClass = new Map<string, number>();
     return [...finishers, ...retired].map((car, index) => {
       const penaltyMs = penaltyFor(car);
+      const classPosition = (seenPerClass.get(car.classId) ?? 0) + 1;
+      seenPerClass.set(car.classId, classPosition);
       return {
         position: index + 1,
+        classPosition,
         carId: car.id,
         teamId: car.teamId,
         driverId: car.driverId,
@@ -564,9 +715,12 @@ export function createRace(config: RaceConfig, seed: string): Race {
   }
 
   function snapshot(): RaceState {
+    const leader = cars.filter((c) => !c.retired).sort((a, b) => b.raceTimeMs - a.raceTimeMs)[0];
     return {
       lap,
       totalLaps,
+      elapsedMs: leader ? leader.raceTimeMs : 0,
+      durationMs,
       weather,
       caution,
       cautionLapsRemaining,

@@ -1,7 +1,7 @@
 # Undercut — Design Spec
 
 **Date:** 2026-09-12
-**Status:** v1 implemented (stages 1–2). Stages 3–4 outstanding.
+**Status:** stages 1–3 implemented. Stage 4 (season layer) outstanding.
 
 ## 1. What this is
 
@@ -31,8 +31,8 @@ backend. No 3D.
 |-------|-------------|--------|
 | 1 | Engine + open-wheel ruleset, headless | done |
 | 2 | Web UI, live race | done |
-| 3 | Endurance ruleset | next |
-| 4 | Season layer | after stage 3 |
+| 3 | Endurance ruleset | done |
+| 4 | Season layer | next |
 
 Stage 3 lands before stage 4 deliberately: a `Regulations` interface with one
 implementation is always subtly wrong, and the second implementation is what
@@ -123,7 +123,28 @@ Recorded because each was found by the tests rather than by eye.
 7. **The pit wall rebuilt its DOM every lap**, destroying focus and hover on the
    controls. It is built once and updated in place.
 
-## 10. Delivery
+## 10. What the second ruleset found
+
+Endurance was built before the season layer precisely so the `Regulations`
+abstraction would be exercised by a second implementation. It found four bugs
+that a single-ruleset engine could never have surfaced:
+
+8. **Qualifying ignored class performance**, so an LMP2 could line up ahead of a
+   Hypercar. The class offset is now part of the qualifying lap.
+9. **The safety car rewrote the race time of cars that had already finished**,
+   retroactively changing a classified result.
+10. **The safety car un-lapped the entire field.** Bunching set every car to the
+    leader's time plus a fixed gap, so a GT ten minutes down rejoined on the
+    leader's gearbox. Whole laps of a deficit are now preserved and only the
+    remainder is closed.
+11. **An empty fuel tank had no consequence.** A pit wall that never called a
+    stop circulated on nothing and won. Running dry now ends that car's race.
+
+Two things also needed to become properties of the ruleset rather than
+constants: attrition (a per-lap retirement roll gives a 200-lap race three times
+a sprint's failures) and refuelling.
+
+## 11. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

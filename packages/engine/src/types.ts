@@ -12,7 +12,7 @@ export type ClassId = string;
 export type CompoundId = 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
 export type WeatherState = 'dry' | 'damp' | 'wet';
 export type PaceMode = 'push' | 'hold' | 'save';
-export type RetirementCause = 'mechanical' | 'collision' | 'driverError';
+export type RetirementCause = 'mechanical' | 'collision' | 'driverError' | 'outOfFuel';
 
 /** A tyre compound's performance envelope. */
 export interface Compound {
@@ -86,12 +86,17 @@ export interface CarClass {
   name: string;
   /** Time added to the reference lap for this class. */
   performanceOffsetMs: number;
+  /** Tank size. Only meaningful where the regulations allow refuelling. */
+  fuelCapacityKg?: number;
 }
 
 export interface Entry {
   carId: CarId;
   teamId: TeamId;
+  /** The driver who starts the race. */
   driverId: DriverId;
+  /** The full crew, in the order they take over. Defaults to the starter alone. */
+  driverIds?: DriverId[];
   classId: ClassId;
   startingCompound: CompoundId;
 }
@@ -132,6 +137,14 @@ export interface CarState {
   gapToLeaderMs: number;
   gapAheadMs: number;
   lastBreakdown: LapBreakdown | null;
+  /** Position within this car's class. Always 1..n, per class. */
+  classPosition: number;
+  /** Seconds the driver currently aboard has been at the wheel. */
+  stintSeconds: number;
+  /** Everyone who has driven this car so far, in order. */
+  driversUsed: DriverId[];
+  /** True once this car has taken the flag. */
+  finished: boolean;
 }
 
 export type CautionPhase = 'none' | 'deployed' | 'ending';
@@ -139,6 +152,10 @@ export type CautionPhase = 'none' | 'deployed' | 'ending';
 export interface RaceState {
   lap: number;
   totalLaps: number;
+  /** Race time elapsed at the front of the field. */
+  elapsedMs: number;
+  /** Set for a race limited by the clock rather than by a lap count. */
+  durationMs: number | null;
   weather: WeatherState;
   caution: CautionPhase;
   cautionLapsRemaining: number;
@@ -158,6 +175,7 @@ export type RaceEvent =
   | { lap: number; type: 'caution'; phase: 'deployed' | 'ending' }
   | { lap: number; type: 'weather'; from: WeatherState; to: WeatherState }
   | { lap: number; type: 'retirement'; car: CarId; cause: RetirementCause }
+  | { lap: number; type: 'driverChange'; car: CarId; from: DriverId; to: DriverId }
   | { lap: number; type: 'radio'; car: CarId; message: string }
   | { lap: number; type: 'chequeredFlag'; winner: CarId };
 
@@ -169,6 +187,7 @@ export interface Classification {
   classId: ClassId;
   lapsCompleted: number;
   raceTimeMs: number;
+  classPosition: number;
   gapToWinnerMs: number;
   bestLapMs: number;
   pitStops: number;

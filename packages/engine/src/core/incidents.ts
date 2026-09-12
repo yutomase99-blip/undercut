@@ -18,12 +18,17 @@ export function rollRetirement(
   paceMode: PaceMode,
   mechanicalRng: Rng,
   driverRng: Rng,
+  attritionScale = 1,
 ): RetirementCause | null {
-  const mechanical = (1 - team.reliability) * MECHANICAL_BASE;
+  const mechanical = (1 - team.reliability) * MECHANICAL_BASE * attritionScale;
   if (mechanicalRng.chance(mechanical)) return 'mechanical';
 
   const error =
-    (1 - driver.consistency) * DRIVER_ERROR_BASE * WEATHER_RISK[weather] * PACE_RISK[paceMode];
+    (1 - driver.consistency) *
+    DRIVER_ERROR_BASE *
+    WEATHER_RISK[weather] *
+    PACE_RISK[paceMode] *
+    attritionScale;
   if (driverRng.chance(error)) return 'driverError';
 
   return null;
