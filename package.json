@@ -1,7 +1,7 @@
 {
   "name": "undercut",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "A motorsport strategy simulation. You run the pit wall, not the car.",
   "license": "MIT",
   "type": "module",
