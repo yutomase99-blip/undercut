@@ -1,7 +1,8 @@
 # Undercut — Design Spec
 
 **Date:** 2026-09-12
-**Status:** all four stages implemented.
+**Status:** all four stages implemented, plus a qualifying session (added after
+the original scope).
 
 ## 1. What this is
 
@@ -169,7 +170,28 @@ Design decisions worth recording:
   storage that throws on every call (private browsing, blocked site data) is a
   supported case rather than a crash.
 
-## 12. Delivery
+## 12. Qualifying
+
+Added after the four staged deliverables. The grid had been decided by a single
+abstracted lap per car; it is now a session.
+
+- **The format comes from the ruleset**, like race length and classes before it:
+  `Regulations.qualifying` declares a knockout with its segments, or a single
+  session. Nothing in `core/` branches on a series name.
+- **One run per segment**, and the player chooses two things: which tyre, and
+  which window. Track evolution makes late runs quicker, traffic and yellow-flag
+  risk make them dangerous, and the board shows all three so the gamble is
+  informed.
+- **The final-segment tyre starts the race.** This is the rule that makes
+  qualifying part of the strategy game: grid position is bought with rubber that
+  will not last.
+- **The race takes a grid, not a result.** `RaceConfig.startingGrid` is optional
+  and the engine falls back to its abstracted lap without it, so every existing
+  caller kept working unchanged.
+- Adding a `qualifying` randomness stream disturbed no existing seed, which is
+  the split-stream design in section 7 paying for itself.
+
+## 13. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

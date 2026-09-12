@@ -122,6 +122,7 @@ function emptyBreakdown(totalMs: number): LapBreakdown {
     fuelMs: 0,
     trafficMs: 0,
     paceMs: 0,
+    surfaceMs: 0,
     errorMs: 0,
     totalMs,
   };
@@ -215,9 +216,16 @@ export function createRace(config: RaceConfig, seed: string): Race {
         streams.grid.normal(0, 260),
     ]),
   );
-  const gridOrder = [...cars].sort(
-    (a, b) => qualifyingTimes.get(a.id)! - qualifyingTimes.get(b.id)!,
-  );
+  // A grid set by a real qualifying session wins over the abstracted lap. Any
+  // car missing from it lines up behind those that are on it.
+  const gridOrder = config.startingGrid
+    ? [
+        ...config.startingGrid
+          .map((id) => cars.find((car) => car.id === id))
+          .filter((car): car is CarRuntime => car !== undefined),
+        ...cars.filter((car) => !config.startingGrid!.includes(car.id)),
+      ]
+    : [...cars].sort((a, b) => qualifyingTimes.get(a.id)! - qualifyingTimes.get(b.id)!);
   let order: CarId[] = gridOrder.map((c) => c.id);
   gridOrder.forEach((car, index) => {
     car.position = index + 1;

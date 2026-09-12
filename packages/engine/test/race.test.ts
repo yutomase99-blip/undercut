@@ -146,3 +146,26 @@ describe('roster overrides', () => {
     expect(teamById('corvid').carPerformance).toBe(before);
   });
 });
+
+describe('a grid set by qualifying', () => {
+  it('starts the race in the order it is given', () => {
+    const reversed = [...defaultGrid()].map((e) => e.carId).reverse();
+    const race = createRace({ ...config(10), startingGrid: reversed }, 'grid-order');
+    expect(race.state().cars.map((c) => c.id)).toEqual(reversed);
+  });
+
+  it('lines up any car missing from the grid behind those on it', () => {
+    const entries = defaultGrid();
+    const partial = entries.slice(0, 5).map((e) => e.carId);
+    const race = createRace({ ...config(10), startingGrid: partial }, 'grid-partial');
+    const order = race.state().cars.map((c) => c.id);
+    expect(order.slice(0, 5)).toEqual(partial);
+    expect(order).toHaveLength(entries.length);
+    expect(new Set(order).size).toBe(entries.length);
+  });
+
+  it('still qualifies for itself when no grid is supplied', () => {
+    const race = createRace(config(10), 'grid-absent');
+    expect(race.state().cars).toHaveLength(defaultGrid().length);
+  });
+});

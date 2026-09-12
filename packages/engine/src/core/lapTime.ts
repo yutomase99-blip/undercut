@@ -40,6 +40,11 @@ export interface LapTimeInput {
   weather: WeatherState;
   /** Time lost behind another car this lap, decided by the race loop. */
   trafficMs: number;
+  /**
+   * State of the track surface, negative as rubber goes down. Qualifying uses
+   * it for evolution across a session; a race leaves it at zero.
+   */
+  surfaceMs?: number;
   rng: Rng;
 }
 
@@ -63,6 +68,7 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
   const fuelMs = input.fuelKg * FUEL_MS_PER_KG;
   const trafficMs = input.trafficMs;
   const paceMs = PACE_DELTA_MS[input.paceMode];
+  const surfaceMs = input.surfaceMs ?? 0;
 
   // A mistake costs time; a exceptional lap saves a little. The floor keeps
   // the distribution honest — nobody finds two seconds out of nowhere.
@@ -70,9 +76,21 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
   const errorMs = Math.max(-150, input.rng.normal(0, sigma));
 
   const totalMs =
-    baseMs + classMs + carMs + driverMs + tyreMs + fuelMs + trafficMs + paceMs + errorMs;
+    baseMs + classMs + carMs + driverMs + tyreMs + fuelMs + trafficMs + paceMs + surfaceMs + errorMs;
 
-  return { baseMs, classMs, carMs, driverMs, tyreMs, fuelMs, trafficMs, paceMs, errorMs, totalMs };
+  return {
+    baseMs,
+    classMs,
+    carMs,
+    driverMs,
+    tyreMs,
+    fuelMs,
+    trafficMs,
+    paceMs,
+    surfaceMs,
+    errorMs,
+    totalMs,
+  };
 }
 
 /** How much faster the tyre wears in each pace mode. */

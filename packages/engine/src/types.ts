@@ -110,6 +110,8 @@ export interface LapBreakdown {
   fuelMs: number;
   trafficMs: number;
   paceMs: number;
+  /** Track surface state: negative once rubber has gone down. */
+  surfaceMs: number;
   errorMs: number;
   totalMs: number;
 }
@@ -230,4 +232,9 @@ export interface RaceConfig {
    * shared content, which would leak between races.
    */
   roster?: { teams?: Team[]; drivers?: Driver[] };
+  /**
+   * The grid, in order, as set by qualifying. Without it the engine falls back
+   * to a single abstracted qualifying lap per car.
+   */
+  startingGrid?: CarId[];
 }
