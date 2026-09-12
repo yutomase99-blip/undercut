@@ -2,6 +2,8 @@
 
 A motorsport strategy game. You sit on the pit wall, not in the car.
 
+**[Play it →](https://yutomase99-blip.github.io/undercut/)**
+
 Box now or stay out two more laps? Cover the rival or run your own race? Push and
 burn the tyre, or save it and watch the car behind close? Every call costs
 something, and the race tells you afterwards whether you were right.
