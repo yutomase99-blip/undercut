@@ -105,6 +105,24 @@ A six-hour race at Vantor Ring, for reference:
 Around 6% of the field fails to finish, across ten or eleven stops and a driver
 change at every one.
 
+## The circuit
+
+The track view is a circuit, not a diagram. Asphalt with white edge lines, grass
+and gravel run-off outside it, red and white kerbs on every real corner, a
+chequered start line under its gantry, a pit lane set back from the main
+straight with a garage for each team, and grandstands full of people at the
+places worth watching from.
+
+All of it is worked out from the same handful of control points the simulation
+uses: the geometry pass produces a direction and an outward normal at every
+point of the lap, so kerbs know which side they are on and the pit lane knows
+which way is inside. The scenery is drawn once into its own canvas and the cars
+are drawn over it, because grandstands do not move and redrawing several
+thousand spectators sixty times a second is a good way to make a race stutter.
+
+Cars are cars — a body, a nose and two wings, pointed the way they are going,
+in team colours. A car in the pits is drawn standing in its box.
+
 ## The race runs on a clock
 
 A lap used to be the smallest thing that happened. Positions, gaps, overtakes,
