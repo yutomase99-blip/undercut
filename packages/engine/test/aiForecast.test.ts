@@ -44,6 +44,7 @@ function view(overrides: Partial<StrategyView> = {}): StrategyView {
     forecastLookahead: 2,
     forecastTrust: 0.6,
     available: ['soft', 'medium', 'hard', 'intermediate', 'wet'],
+    mandatoryMarginLaps: 5,
     regulations: OPEN_WHEEL,
     rng: createStreams('view').strategy,
     ...overrides,
@@ -170,19 +171,53 @@ describe('in a race', () => {
     );
   });
 
-  it('does not send the whole field into the pits on one lap', () => {
-    // The failure the reaction delay was added to stop, now that every pit
-    // wall can see the same weather coming.
+  it('does not send the whole field into the pits on one lap of green running', () => {
+    // The failure the reaction delay was added to stop, now that every pit wall
+    // can see the same weather coming.
+    //
+    // Laps under caution are excluded on purpose. A safety car genuinely does
+    // send most of a field down the pit lane at once — that is what a free stop
+    // is — and counting those laps would be measuring the safety car rather
+    // than the forecast.
     let worst = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const result = simulate(config(), `stagger-${i}`);
+
+      const underCaution = new Set<number>();
+      let cautionFrom: number | null = null;
+      for (const event of result.events) {
+        if (event.type !== 'caution') continue;
+        if (event.phase === 'deployed') cautionFrom = event.lap;
+        else if (cautionFrom !== null) {
+          for (let lap = cautionFrom; lap <= event.lap + 1; lap += 1) underCaution.add(lap);
+          cautionFrom = null;
+        }
+      }
+      if (cautionFrom !== null) {
+        for (let lap = cautionFrom; lap <= result.totalLaps; lap += 1) underCaution.add(lap);
+      }
+
+      const perLap = new Map<number, number>();
+      for (const event of result.events) {
+        if (event.type !== 'pitStop' || underCaution.has(event.lap)) continue;
+        perLap.set(event.lap, (perLap.get(event.lap) ?? 0) + 1);
+      }
+      worst = Math.max(worst, 0, ...perLap.values());
+    }
+    expect(worst).toBeLessThan(TEAMS.length * 2 * 0.7);
+  });
+
+  it('does still leave somebody out when the safety car comes', () => {
+    // Most of the field takes a free stop; it should never be every last car.
     for (let i = 0; i < 12; i += 1) {
       const result = simulate(config(), `stagger-${i}`);
       const perLap = new Map<number, number>();
       for (const event of result.events) {
         if (event.type === 'pitStop') perLap.set(event.lap, (perLap.get(event.lap) ?? 0) + 1);
       }
-      worst = Math.max(worst, ...perLap.values());
+      const busiest = Math.max(0, ...perLap.values());
+      expect(busiest).toBeLessThan(TEAMS.length * 2);
     }
-    expect(worst).toBeLessThan(TEAMS.length * 2 * 0.7);
   });
 
   it('still replays a seed identically', () => {

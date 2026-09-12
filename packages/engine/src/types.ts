@@ -159,6 +159,8 @@ export interface RaceState {
   /** Set for a race limited by the clock rather than by a lap count. */
   durationMs: number | null;
   weather: WeatherState;
+  /** How wet the track surface actually is, 0 to 1. Lags behind the weather. */
+  wetness: number;
   caution: CautionPhase;
   cautionLapsRemaining: number;
   cars: CarState[];

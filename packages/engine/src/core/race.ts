@@ -38,6 +38,8 @@ import {
   forecastTrustFor,
   rollStartingWeather,
   rollWeatherTimeline,
+  stepWetness,
+  WETNESS_FOR,
   type ForecastEntry,
 } from './weather.ts';
 import { cautionFollows, rollRetirement } from './incidents.ts';
@@ -117,6 +119,8 @@ interface CarRuntime extends CarState {
   fuelCapacityKg: number;
   /** Sets left in the garage. */
   allocation: TyreAllocation;
+  /** How late this pit wall leaves a compulsory stop. */
+  mandatoryMarginLaps: number;
 }
 
 export interface Race {
@@ -243,6 +247,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
       // movers and the reactors all arrive in the pit lane together.
       reactionLaps: streams.strategy.chance(team.pitCrewSkill * 0.3) ? 0 : 1 + streams.strategy.int(3),
       forecastTrust: forecastTrustFor(team) + streams.strategy.range(-0.14, 0.14),
+      mandatoryMarginLaps: 3 + streams.strategy.int(7),
       paceEmaMs: 0,
       gridPosition: 0,
       // The set the car starts the race on comes out of the same garage.
@@ -295,6 +300,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
   let lap = 0;
   let weather: WeatherState = startingWeather;
+  let wetness = WETNESS_FOR[startingWeather];
   let caution: CautionPhase = 'none';
   let cautionLapsRemaining = 0;
   let finished = false;
@@ -425,6 +431,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
         available: (Object.keys(car.allocation) as CompoundId[]).filter(
           (compound) => car.allocation[compound] > 0,
         ),
+        mandatoryMarginLaps: car.mandatoryMarginLaps,
         regulations,
         rng: streams.strategy,
       });
@@ -475,6 +482,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
       weatherChangedAtLap = lap;
     }
 
+    // The sky changes at once; the track takes its time catching up.
+    wetness = stepWetness(wetness, weather);
+
     if (caution === 'deployed') {
       cautionLapsRemaining -= 1;
       if (cautionLapsRemaining <= 0) {
@@ -523,7 +533,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
           tyreAgeLaps: car.tyreAgeLaps,
           fuelKg: car.fuelKg,
           paceMode: car.paceMode,
-          weather,
+          wetness,
           trafficMs: lappedTrafficMs(car),
           rng: streams.driverError,
         });
@@ -846,6 +856,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
       elapsedMs: leader ? leader.raceTimeMs : 0,
       durationMs,
       weather,
+      wetness,
       caution,
       cautionLapsRemaining,
       finished,

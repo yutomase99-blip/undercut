@@ -37,6 +37,8 @@ export interface StrategyView {
   forecastTrust: number;
   /** Compounds this car still has a set of. */
   available: CompoundId[];
+  /** How late this pit wall is willing to leave a compulsory stop. */
+  mandatoryMarginLaps: number;
   regulations: Regulations;
   rng: Rng;
 }
@@ -147,13 +149,23 @@ export function decideStrategy(view: StrategyView): StrategyDecision {
     // is, for the moment, still dry.
     pitCompound = chooseCompound(view, playingFor);
   } else if (canStop) {
-    if (view.cautionDeployed && view.lapsRemaining > 6 && view.tyreAgeLaps > 5) {
+    if (
+      view.cautionDeployed &&
+      // Fresh tyres have to have time to pay for themselves. A caution seven
+      // laps from the flag is not a free stop, it is a free twenty seconds
+      // lost — and judging it against a fixed lap count sent the entire field
+      // down the pit lane together whenever a safety car came out late.
+      view.lapsRemaining > view.plannedStintLaps * 0.4 &&
+      view.tyreAgeLaps > view.plannedStintLaps * 0.3
+    ) {
       // A stop under caution costs a fraction of a green-flag stop.
       pitCompound = chooseCompound(view);
     } else if (view.tyreAgeLaps >= view.plannedStintLaps && view.lapsRemaining > 3) {
       pitCompound = chooseCompound(view);
-    } else if (mandatoryUnmet && view.lapsRemaining <= 5) {
-      // Last chance to serve the rule. Better late than disqualified.
+    } else if (mandatoryUnmet && view.lapsRemaining <= view.mandatoryMarginLaps) {
+      // Last chance to serve the rule. Better late than disqualified — and
+      // every pit wall leaves itself a different amount of room, or the whole
+      // field serves it on the same lap.
       pitCompound = chooseCompound(view);
     }
   }

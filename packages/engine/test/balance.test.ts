@@ -16,6 +16,8 @@ function config(trackId: string): RaceConfig {
     track: trackById(trackId),
     regulations: openWheelOverLaps(30),
     entries: defaultGrid(),
+    // Measured in the dry deliberately. Rain is the loudest source of variance
+    // in a race, and this suite is asking about the cars.
     startingWeather: 'dry',
   };
 }
