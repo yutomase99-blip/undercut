@@ -233,6 +233,7 @@ function startSingleRace(): void {
           ...config,
           entries: applyQualifyingTyres(config.entries, qualifying),
           startingGrid: qualifying.grid,
+          tyreSets: qualifying.allocations,
         },
         seed: setup.seed,
         playerCarId,
@@ -622,8 +623,12 @@ function renderRace(options: RaceOptions): void {
 
     renderForecast(state);
     buildPitChips(state.weather === 'dry' ? ['soft', 'medium', 'hard'] : ['intermediate', 'wet']);
+    const allocation = race.allocationOf(playerCarId);
     for (const { compound: id, chip } of pitChips) {
-      chip.disabled = locked;
+      const sets = allocation[id] ?? 0;
+      chip.innerHTML = `${COMPOUNDS[id].label} <span class="chip__sets mono">${sets}</span>`;
+      chip.disabled = locked || sets === 0;
+      chip.title = `${sets} set${sets === 1 ? '' : 's'} left`;
       chip.classList.toggle('chip--armed', armedCompound === id);
     }
     for (const { mode, chip } of paceChips) {
@@ -898,6 +903,7 @@ function startSeasonRound(season: SeasonState): void {
         ...config,
         entries: applyQualifyingTyres(config.entries, qualifying),
         startingGrid: qualifying.grid,
+        tyreSets: qualifying.allocations,
       },
       seed,
       playerCarId,

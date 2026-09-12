@@ -23,6 +23,9 @@ export const ENDURANCE: Regulations = {
     mandatoryCompoundChange: false,
     allowedCompounds: ['soft', 'medium', 'hard', 'intermediate', 'wet'],
   },
+  // A long race gets through a lot of rubber, and endurance crews double- and
+  // triple-stint sets rather than hoarding them for a qualifying lap.
+  tyreAllocation: { soft: 6, medium: 10, hard: 10, intermediate: 8, wet: 6 },
   stints: { maxDriverStintSeconds: 4500, minDriverCount: 3 },
   overtaking: { drsZones: 0, classDifferentialBonusMs: 4000 },
   cautions: { kind: 'fullCourseYellow', incidentRatePerLap: 0.0018 },

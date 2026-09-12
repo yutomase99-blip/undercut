@@ -17,6 +17,12 @@ import type {
   WeatherState,
 } from '../types.ts';
 import { COMPOUNDS } from '../content/compounds.ts';
+import {
+  allocationFor,
+  availableCompound,
+  takeSet,
+  type TyreAllocation,
+} from './allocation.ts';
 import { driverById, teamById } from '../content/grid.ts';
 import { createStreams, type Streams } from '../rng/streams.ts';
 import { computeLapTime, PACE_FUEL_FACTOR, PACE_WEAR_FACTOR } from './lapTime.ts';
@@ -107,6 +113,8 @@ interface CarRuntime extends CarState {
   rosterIndex: number;
   /** Tank size, where the regulations allow refuelling. */
   fuelCapacityKg: number;
+  /** Sets left in the garage. */
+  allocation: TyreAllocation;
 }
 
 export interface Race {
@@ -118,6 +126,8 @@ export interface Race {
   isFinished(): boolean;
   result(): RaceResult;
   events(): readonly RaceEvent[];
+  /** What a car still has in the garage. */
+  allocationOf(carId: CarId): TyreAllocation;
   /** What your pit wall believes the weather is about to do. */
   forecast(horizon?: number): ForecastEntry[];
   /** What a particular team's pit wall believes. Every team reads it differently. */
@@ -215,6 +225,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
       forecastTrust: forecastTrustFor(team) + streams.strategy.range(-0.14, 0.14),
       paceEmaMs: 0,
       gridPosition: 0,
+      allocation: config.tyreSets?.get(entry.carId)
+        ? { ...(config.tyreSets.get(entry.carId) as TyreAllocation) }
+        : allocationFor(regulations),
       classPosition: 0,
       stintSeconds: 0,
       driversUsed: [entry.driverId],
@@ -391,6 +404,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
         forecast: teamForecast(car.teamId),
         forecastLookahead: forecastLookaheadFor(car.team),
         forecastTrust: car.forecastTrust,
+        available: (Object.keys(car.allocation) as CompoundId[]).filter(
+          (compound) => car.allocation[compound] > 0,
+        ),
         regulations,
         rng: streams.strategy,
       });
@@ -496,6 +512,18 @@ export function createRace(config: RaceConfig, seed: string): Race {
       }
 
       let total = breakdown.totalMs;
+      if (car.pendingPit) {
+        // You can only bolt on what is in the garage. A call for a set the car
+        // has run out of becomes the nearest thing it still has.
+        const fitted = availableCompound(
+          car.allocation,
+          car.pendingPit,
+          regulations.tyreRules.allowedCompounds,
+        );
+        if (fitted && fitted !== car.pendingPit) car.pendingPit = fitted;
+        if (!fitted) car.pendingPit = null;
+      }
+
       if (car.pendingPit) {
         let stationaryMs = pitStopMs(car.team, streams.pitCrew);
         if (regulations.refuelling) {
@@ -652,6 +680,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
       if (car.pendingPit) {
         car.compound = car.pendingPit;
+        car.allocation = takeSet(car.allocation, car.pendingPit);
         car.compoundsUsed.push(car.pendingPit);
         car.tyreAgeLaps = 0;
         car.pitStops += 1;
@@ -817,6 +846,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
     tick,
     isFinished: () => finished,
     events: () => events,
+    allocationOf: (carId) => ({
+      ...(byId.get(carId)?.allocation ?? allocationFor(regulations)),
+    }),
     forecast: (horizon = FORECAST_HORIZON) => teamForecast(playerTeamId(), horizon),
     forecastFor: (teamId, horizon = FORECAST_HORIZON) => teamForecast(teamId, horizon),
     result: () => ({

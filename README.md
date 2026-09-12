@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 171 tests, including a statistical balance suite
+npm test           # 184 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -124,6 +124,20 @@ window, and the odds of the flags, so the gamble is informed rather than blind.
 start the race on.** A lap on softs buys grid position and commits you to
 stopping early. That single rule is what makes qualifying part of the race
 rather than a prelude to it.
+
+**Tyres are allocated for the weekend, not per session.** Three sets of softs,
+three mediums, two hards, and qualifying draws from the same pot the race does.
+Run softs in all three segments and you will arrive at the grid with none left:
+
+| | Soft | Medium | Hard |
+|---|---|---|---|
+| Q1 | 3 | 3 | 2 |
+| Q2 | 2 | 3 | 2 |
+| Q3 | 1 | 3 | 2 |
+| Race | 0 | 3 | 2 |
+
+Which is the point. Without a price, the quickest tyre is simply the right
+answer every time, and a choice with one right answer is not a choice.
 
 A car whose lap is deleted starts at the back, whatever class it is in.
 

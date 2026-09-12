@@ -43,6 +43,7 @@ function view(overrides: Partial<StrategyView> = {}): StrategyView {
     forecast: [],
     forecastLookahead: 2,
     forecastTrust: 0.6,
+    available: ['soft', 'medium', 'hard', 'intermediate', 'wet'],
     regulations: OPEN_WHEEL,
     rng: createStreams('view').strategy,
     ...overrides,

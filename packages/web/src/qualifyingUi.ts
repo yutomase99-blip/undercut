@@ -79,12 +79,16 @@ export function renderQualifying(options: QualifyingOptions): void {
     const panel = el('div', 'panel quali__panel');
     panel.append(el('span', 'eyebrow', 'Your run'));
 
+    const allocation = active.allocationOf(options.playerCarId);
     const tyreRow = el('div', 'control-row');
     tyreRow.append(el('span', 'eyebrow', 'Tyre'));
     for (const compound of allowed) {
-      const chip = el('button', 'chip', COMPOUNDS[compound].label);
+      const sets = allocation[compound] ?? 0;
+      const chip = el('button', 'chip', `${COMPOUNDS[compound].label} <span class="chip__sets mono">${sets}</span>`);
       chip.type = 'button';
+      chip.disabled = sets === 0;
       chip.setAttribute('aria-pressed', String(compound === chosenCompound));
+      chip.title = `${sets} set${sets === 1 ? '' : 's'} left for the weekend`;
       chip.addEventListener('click', () => {
         chosenCompound = compound;
         renderSegment();
@@ -92,6 +96,19 @@ export function renderQualifying(options: QualifyingOptions): void {
       tyreRow.append(chip);
     }
     panel.append(tyreRow);
+    panel.append(
+      el(
+        'p',
+        'hub__note hub__note--dim',
+        'Sets are for the whole weekend. A lap on softs here is a set you will not have on Sunday.',
+      ),
+    );
+
+    // A car cannot run a compound it has none of.
+    if ((allocation[chosenCompound] ?? 0) === 0) {
+      const fallback = allowed.find((c) => (allocation[c] ?? 0) > 0);
+      if (fallback) chosenCompound = fallback;
+    }
 
     panel.append(el('span', 'eyebrow', 'When you go'));
     // Booking the player's run before reading the forecast means the crowding

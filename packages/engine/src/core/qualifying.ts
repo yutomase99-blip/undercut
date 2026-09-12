@@ -9,6 +9,7 @@ import type {
 import { COMPOUNDS } from '../content/compounds.ts';
 import { driverById, teamById } from '../content/registry.ts';
 import { createStreams, type Rng, type Streams } from '../rng/streams.ts';
+import { allocationFor, availableCompound, takeSet, type TyreAllocation } from './allocation.ts';
 import { computeLapTime } from './lapTime.ts';
 import { suitableCompounds } from './weather.ts';
 
@@ -52,6 +53,8 @@ export interface QualifyingState {
 export interface QualifyingResult {
   /** The grid, front to back. */
   grid: CarId[];
+  /** What each car has left in the garage for the race. */
+  allocations: Map<CarId, TyreAllocation>;
   laps: QualifyingLap[];
   /** Which segment a car was knocked out in. Absent for cars that survived. */
   eliminatedAt: Map<CarId, number>;
@@ -81,6 +84,8 @@ export interface Qualifying {
   forecast(): number[];
   /** Odds of the flags ending every lap in this window. */
   yellowChanceAt(slot: number): number;
+  /** What a car still has in the garage. */
+  allocationOf(carId: CarId): TyreAllocation;
 }
 
 export function createQualifying(config: RaceConfig, seed: string): Qualifying {
@@ -104,6 +109,9 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
   const laps: QualifyingLap[] = [];
   const eliminatedAt = new Map<CarId, number>();
   const plans = new Map<CarId, QualifyingRun>();
+  const allocations = new Map<CarId, TyreAllocation>(
+    entries.map((entry) => [entry.carId, allocationFor(regulations)]),
+  );
 
   let segment = 0;
   let runners: CarId[] = entries.map((e) => e.carId);
@@ -141,7 +149,11 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
     const base = rng.range(0.25, 1);
     const target = (slots - 1) * Math.min(1, base + (team.carPerformance - 0.8) * 0.15);
     const slot = Math.max(0, Math.min(slots - 1, Math.round(target)));
-    return { carId, slot, compound: softest };
+    // A team runs the softest thing it still has; the fastest tyre is only
+    // fastest if there is one left in the garage.
+    const compound =
+      availableCompound(allocations.get(carId)!, softest, allowed) ?? softest;
+    return { carId, slot, compound };
   }
 
   function lapTimeFor(run: QualifyingRun, carsInSlot: number): number {
@@ -199,7 +211,17 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
       if (rng.chance(yellowChanceAt(slot))) yellowSlots.add(slot);
     }
 
-    const produced: QualifyingLap[] = runs.map((run) => {
+    // A run costs a set, whoever asked for it. A car with none of the compound
+    // it wanted goes out on whatever it does have.
+    const honoured = runs.map((run) => {
+      const allocation = allocations.get(run.carId)!;
+      const compound = availableCompound(allocation, run.compound, allowed);
+      if (!compound) return run;
+      allocations.set(run.carId, takeSet(allocation, compound));
+      return { ...run, compound };
+    });
+
+    const produced: QualifyingLap[] = honoured.map((run) => {
       const deleted = yellowSlots.has(run.slot);
       const timeMs = deleted ? null : Math.round(lapTimeFor(run, perSlot.get(run.slot) ?? 1));
       return { carId: run.carId, segment, slot: run.slot, compound: run.compound, timeMs, deleted };
@@ -255,7 +277,13 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
       }
     }
 
-    return { grid, laps: [...laps], eliminatedAt: new Map(eliminatedAt), startingCompounds };
+    return {
+      grid,
+      laps: [...laps],
+      eliminatedAt: new Map(eliminatedAt),
+      startingCompounds,
+      allocations: new Map([...allocations].map(([carId, a]) => [carId, { ...a }])),
+    };
   }
 
   return {
@@ -274,6 +302,7 @@ export function createQualifying(config: RaceConfig, seed: string): Qualifying {
     trafficMsFor,
     forecast,
     yellowChanceAt,
+    allocationOf: (carId) => ({ ...(allocations.get(carId) ?? allocationFor(regulations)) }),
   };
 }
 

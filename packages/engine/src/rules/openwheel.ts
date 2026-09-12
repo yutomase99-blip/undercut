@@ -10,6 +10,7 @@ export const OPEN_WHEEL: Regulations = {
     mandatoryCompoundChange: true,
     allowedCompounds: ['soft', 'medium', 'hard', 'intermediate', 'wet'],
   },
+  tyreAllocation: { soft: 3, medium: 3, hard: 2, intermediate: 4, wet: 3 },
   stints: { maxDriverStintSeconds: null, minDriverCount: 1 },
   overtaking: { drsZones: 2, classDifferentialBonusMs: 0 },
   cautions: { kind: 'safetyCar', incidentRatePerLap: 0.0025 },

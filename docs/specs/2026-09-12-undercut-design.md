@@ -226,7 +226,25 @@ each.
   forty-three stops in three laps. The strategist now decides against the
   conditions it is *playing for* rather than the ones outside the window.
 
-## 14. Delivery
+## 14. Tyre allocation
+
+Sets are issued for the weekend and drawn down by qualifying and the race
+alike — the change that gives a qualifying run a price. Before it, the softest
+tyre was the right answer in every segment, and a choice with one right answer
+is not a choice.
+
+- **The allocation comes from the ruleset**, like everything else that differs
+  between the two championships. Endurance gets far more of it, and hoards none
+  of it for a qualifying lap.
+- **A car can always stop.** A call for a compound the car has run out of is
+  substituted for the nearest thing still in the garage rather than refused,
+  because a pit stop that cannot happen strands a car for reasons the player
+  never sees.
+- **The strategist plans against its own garage**, not against the compound
+  list. Planning around a set spent in qualifying is how a strategy falls apart
+  in the pit lane.
+
+## 15. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.
