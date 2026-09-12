@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 139 tests, including a statistical balance suite
+npm test           # 155 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -126,6 +126,23 @@ stopping early. That single rule is what makes qualifying part of the race
 rather than a prelude to it.
 
 A car whose lap is deleted starts at the back, whatever class it is in.
+
+## The forecast
+
+The pit wall gets the next six laps of weather, each call carrying its own
+confidence.
+
+The whole race's weather is rolled from the seed before the start, so there is a
+real future to be more or less right about. The forecast reveals it with an
+error that shrinks as a lap approaches — each future lap carries one fixed
+measure of doubt, and confidence rises to overtake it. So the forecast
+**converges**: once it has a lap right it stops changing its mind, rather than
+flickering from lap to lap.
+
+It is also **wrong sometimes**, and more often the further out it looks. A
+forecast that is always right is not a decision — it is an instruction. Six laps
+out you are being told something worth roughly half a guess; one lap out you can
+bet the race on it.
 
 ## The season
 

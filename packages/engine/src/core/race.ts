@@ -23,7 +23,12 @@ import { computeLapTime, PACE_FUEL_FACTOR, PACE_WEAR_FACTOR } from './lapTime.ts
 import { tyreConditionPct } from './tyres.ts';
 import { overtakeChance } from './overtake.ts';
 import { pitStopMs, totalPitLossMs } from './pit.ts';
-import { stepWeather } from './weather.ts';
+import {
+  FORECAST_HORIZON,
+  forecastFrom,
+  rollWeatherTimeline,
+  type ForecastEntry,
+} from './weather.ts';
 import { cautionFollows, rollRetirement } from './incidents.ts';
 import { decideStrategy, plannedStint } from '../ai/strategist.ts';
 
@@ -101,6 +106,8 @@ export interface Race {
   isFinished(): boolean;
   result(): RaceResult;
   events(): readonly RaceEvent[];
+  /** What the pit wall believes the weather is about to do. */
+  forecast(horizon?: number): ForecastEntry[];
 }
 
 function resolveTotalLaps(config: RaceConfig): number {
@@ -243,6 +250,15 @@ export function createRace(config: RaceConfig, seed: string): Race {
   let cautionLapsRemaining = 0;
   let finished = false;
   let weatherChangedAtLap = 0;
+  // The weather for the whole race is decided now, so that a forecast has a
+  // real future to be more or less right about. One extra entry covers the
+  // final lap without leaving a forecast dangling past the flag.
+  const weatherTimeline = rollWeatherTimeline(
+    config.startingWeather,
+    totalLaps + 1,
+    track.weatherVolatility,
+    streams.weather,
+  );
   /** Who passed whom and when, so a beaten car does not instantly fight back. */
   const lastPassedBy = new Map<CarId, { by: CarId; lap: number }>();
 
@@ -372,7 +388,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const emittedFrom = events.length;
     lap += 1;
 
-    const nextWeather = stepWeather(weather, track.weatherVolatility, streams.weather);
+    const nextWeather = weatherTimeline[lap] ?? weather;
     if (nextWeather !== weather) {
       events.push({ lap, type: 'weather', from: weather, to: nextWeather });
       weather = nextWeather;
@@ -755,6 +771,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
     tick,
     isFinished: () => finished,
     events: () => events,
+    forecast: (horizon = FORECAST_HORIZON) => forecastFrom(weatherTimeline, lap, seed, horizon),
     result: () => ({
       trackId: track.id,
       seed,

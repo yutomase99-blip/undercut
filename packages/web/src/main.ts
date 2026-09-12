@@ -529,6 +529,20 @@ function renderRace(options: RaceOptions): void {
   gapBlock.append(gapLabel, gapValue);
   readouts.append(tyreBlock, fuelBlock, gapBlock);
 
+  /**
+   * The forecast sits on the pit wall rather than in the header, because it is
+   * an input to a decision and not a status line. It is deliberately shown with
+   * its confidence: the further out a call is, the less it deserves to be
+   * acted on.
+   */
+  const forecastPanel = el('div', 'forecast');
+  const forecastHead = el('div', 'forecast__head');
+  const forecastLabel = el('span', 'eyebrow', 'Forecast');
+  const forecastCall = el('span', 'forecast__call mono');
+  forecastHead.append(forecastLabel, forecastCall);
+  const forecastCells = el('div', 'forecast__cells');
+  forecastPanel.append(forecastHead, forecastCells);
+
   const controls = el('div', 'controls');
   const pitRow = el('div', 'control-row');
   pitRow.append(el('span', 'eyebrow', 'Box'));
@@ -568,7 +582,7 @@ function renderRace(options: RaceOptions): void {
     });
   }
 
-  wall.append(wallHead, readouts, controls);
+  wall.append(wallHead, readouts, forecastPanel, controls);
 
   function renderWall(state: ReturnType<Race['state']>): void {
     const car = state.cars.find((c) => c.id === playerCarId);
@@ -606,6 +620,7 @@ function renderRace(options: RaceOptions): void {
         car.position === 1 ? 'Leading' : `+${(car.gapAheadMs / 1000).toFixed(1)}s`;
     }
 
+    renderForecast(state);
     buildPitChips(state.weather === 'dry' ? ['soft', 'medium', 'hard'] : ['intermediate', 'wet']);
     for (const { compound: id, chip } of pitChips) {
       chip.disabled = locked;
@@ -614,6 +629,44 @@ function renderRace(options: RaceOptions): void {
     for (const { mode, chip } of paceChips) {
       chip.disabled = locked;
       chip.setAttribute('aria-pressed', String(car.paceMode === mode));
+    }
+  }
+
+  const WEATHER_COLOUR: Record<string, string> = {
+    dry: 'var(--dim)',
+    damp: '#8fbfff',
+    wet: 'var(--blue)',
+  };
+
+  function renderForecast(state: ReturnType<Race['state']>): void {
+    const entries = race.forecast();
+    forecastCells.replaceChildren();
+
+    if (entries.length === 0) {
+      forecastCall.textContent = 'Race ending';
+      forecastCall.style.color = 'var(--dimmer)';
+      return;
+    }
+
+    const change = entries.find((entry) => entry.state !== state.weather);
+    if (change) {
+      const laps = change.lap - state.lap;
+      forecastCall.textContent = `${WEATHER_LABEL[change.state]} in ${laps} lap${laps === 1 ? '' : 's'}`;
+      forecastCall.style.color = WEATHER_COLOUR[change.state] ?? 'var(--text)';
+    } else {
+      forecastCall.textContent = 'Settled';
+      forecastCall.style.color = 'var(--dimmer)';
+    }
+
+    for (const entry of entries) {
+      const cell = el('div', 'forecast__cell');
+      cell.style.opacity = String(0.35 + entry.confidence * 0.65);
+      cell.innerHTML = `
+        <span class="forecast__lap mono">${entry.lap}</span>
+        <span class="forecast__state mono" style="color:${WEATHER_COLOUR[entry.state]}">${WEATHER_LABEL[entry.state]}</span>
+        <span class="forecast__confidence mono">${Math.round(entry.confidence * 100)}</span>`;
+      cell.title = `Lap ${entry.lap}: ${WEATHER_LABEL[entry.state]}, ${Math.round(entry.confidence * 100)}% confidence`;
+      forecastCells.append(cell);
     }
   }
 
