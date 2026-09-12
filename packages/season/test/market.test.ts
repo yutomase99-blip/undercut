@@ -50,13 +50,29 @@ describe('driver market', () => {
     expect(market.pool).not.toContain(wanted);
   });
 
-  it('refuses a driver who is already signed', () => {
+  it('refuses a driver who is not on the market', () => {
+    // Deliberately independent of who won the championship: when the player's
+    // team picks first there are no earlier signings to reuse.
+    const market = autoPick(openMarket(finishedSeason()));
+    if (!market.awaitingPlayer) return;
+
+    expect(pickDriver(market, 'd-nobody-of-that-name').signings).toHaveLength(
+      market.signings.length,
+    );
+
+    const alreadySigned = market.signings[0]?.driverId;
+    if (alreadySigned) {
+      expect(pickDriver(market, alreadySigned).signings).toHaveLength(market.signings.length);
+    }
+  });
+
+  it('refuses to sign the same driver twice', () => {
     let market = autoPick(openMarket(finishedSeason()));
     if (!market.awaitingPlayer) return;
-    const taken = market.signings[0]!.driverId;
-    const before = market.signings.length;
-    market = pickDriver(market, taken);
-    expect(market.signings).toHaveLength(before);
+    const wanted = market.pool[0]!;
+    market = autoPick(pickDriver(market, wanted));
+    expect(market.signings.filter((s) => s.driverId === wanted)).toHaveLength(1);
+    expect(market.pool).not.toContain(wanted);
   });
 
   it('fills every seat on the grid', () => {

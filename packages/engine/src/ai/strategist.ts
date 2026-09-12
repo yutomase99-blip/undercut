@@ -1,10 +1,13 @@
 import type { CompoundId, PaceMode, WeatherState } from '../types.ts';
+import type { ForecastEntry } from '../core/weather.ts';
 import type { Regulations } from '../rules/regulations.ts';
 import type { Rng } from '../rng/streams.ts';
 import { COMPOUNDS, DRY_COMPOUNDS } from '../content/compounds.ts';
 import { suitableCompounds } from '../core/weather.ts';
 
 export interface StrategyView {
+  /** The lap just completed. */
+  lap: number;
   compound: CompoundId;
   tyreAgeLaps: number;
   tyreConditionPct: number;
@@ -26,6 +29,12 @@ export interface StrategyView {
   /** Seconds the driver aboard has been at the wheel, and the legal limit. */
   stintSeconds: number;
   maxStintSeconds: number | null;
+  /** This team's own reading of the weather to come. */
+  forecast: ForecastEntry[];
+  /** How many laps ahead this team will commit to a forecast. */
+  forecastLookahead: number;
+  /** How sure this team insists on being before acting on one. */
+  forecastTrust: number;
   regulations: Regulations;
   rng: Rng;
 }
@@ -40,6 +49,7 @@ const MAX_STOPS = 3;
 const FUEL_RESERVE_LAPS = 2;
 /** Share of the legal stint after which the crew brings the car in. */
 const STINT_MARGIN = 0.85;
+
 
 /** Whether a tyre family matches the conditions at all. */
 function isWrongFamily(compound: CompoundId, weather: WeatherState): boolean {
@@ -56,11 +66,12 @@ export function plannedStint(compound: CompoundId, wearFactor: number, rng: Rng)
 }
 
 /** Picks the next set: something legal, suited to the weather, and ideally new. */
-export function chooseCompound(view: StrategyView): CompoundId {
-  const suited = suitableCompounds(view.weather).filter((c) =>
+export function chooseCompound(view: StrategyView, forWeather?: WeatherState): CompoundId {
+  const weather = forWeather ?? view.weather;
+  const suited = suitableCompounds(weather).filter((c) =>
     view.regulations.tyreRules.allowedCompounds.includes(c),
   );
-  if (view.weather !== 'dry') return suited[0] ?? 'intermediate';
+  if (weather !== 'dry') return suited[0] ?? 'intermediate';
 
   const unused = suited.filter((c) => !view.compoundsUsed.includes(c));
   const pool = unused.length > 0 ? unused : suited;
@@ -91,21 +102,42 @@ export function decideStrategy(view: StrategyView): StrategyDecision {
   const stintNearlyUp =
     view.maxStintSeconds !== null && view.stintSeconds >= view.maxStintSeconds * STINT_MARGIN;
 
+  // A change the team both expects soon and believes in. Anything further off
+  // than it is willing to commit to, or shakier than it trusts, is noted and
+  // ignored.
+  // The conditions this pit wall is playing for: what it believes is coming, if
+  // it is both confident enough and close enough to act on, otherwise what is
+  // outside now.
+  const confidentChange =
+    view.forecastLookahead > 0
+      ? view.forecast.find(
+          (entry) =>
+            entry.lap - view.lap <= view.forecastLookahead &&
+            entry.confidence >= view.forecastTrust &&
+            entry.state !== view.weather,
+        )
+      : undefined;
+  const playingFor: WeatherState = confidentChange?.state ?? view.weather;
+
+  const wrongForPlan = isWrongFamily(view.compound, playingFor);
+  const wrongForNow = isWrongFamily(view.compound, view.weather);
+  // Reacting to weather that has already turned takes a moment to organise, and
+  // a slower pit wall takes longer. Moving early for weather you expect does
+  // not, because you picked the lap yourself.
+  const readyToAct = wrongForNow ? view.lapsSinceWeatherChange >= view.reactionLaps : true;
+
   if (canStop && (outOfFuelSoon || stintNearlyUp)) {
     // Fuel and the stint clock are not negotiable, so they are checked before
     // anything to do with tyres.
     pitCompound = chooseCompound(view);
+  } else if (canStop && wrongForPlan && readyToAct && view.lapsRemaining > 2) {
+    // Fit for the conditions being played for. Judging the plan rather than
+    // only the present is what stops a car that has just fitted wets for rain
+    // it expects from being sent straight back out for dries because the track
+    // is, for the moment, still dry.
+    pitCompound = chooseCompound(view, playingFor);
   } else if (canStop) {
-    if (
-      isWrongFamily(view.compound, view.weather) &&
-      view.lapsRemaining > 2 &&
-      view.lapsSinceWeatherChange >= view.reactionLaps
-    ) {
-      // Conditions changed under us. Nothing else matters — but a pit wall
-      // takes a moment to commit, and a slower one takes longer. Without this
-      // delay all twenty cars box on the identical lap, which is not racing.
-      pitCompound = chooseCompound(view);
-    } else if (view.cautionDeployed && view.lapsRemaining > 6 && view.tyreAgeLaps > 5) {
+    if (view.cautionDeployed && view.lapsRemaining > 6 && view.tyreAgeLaps > 5) {
       // A stop under caution costs a fraction of a green-flag stop.
       pitCompound = chooseCompound(view);
     } else if (view.tyreAgeLaps >= view.plannedStintLaps && view.lapsRemaining > 3) {

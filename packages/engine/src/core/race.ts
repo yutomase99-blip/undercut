@@ -25,7 +25,10 @@ import { overtakeChance } from './overtake.ts';
 import { pitStopMs, totalPitLossMs } from './pit.ts';
 import {
   FORECAST_HORIZON,
+  forecastAccuracy,
   forecastFrom,
+  forecastLookaheadFor,
+  forecastTrustFor,
   rollWeatherTimeline,
   type ForecastEntry,
 } from './weather.ts';
@@ -88,6 +91,15 @@ interface CarRuntime extends CarState {
   reactionLaps: number;
   /** Rolling average of clean lap times, used to judge real pace. */
   paceEmaMs: number;
+  /**
+   * This car's own nerve about acting on a forecast, either side of its team's.
+   *
+   * Team-level thresholds alone are too coarse: confidence in a change only
+   * takes a handful of distinct values as it approaches, so twenty cars reach
+   * their decision on the same two laps. A per-car bias spreads the thresholds
+   * continuously, and somebody is always the one who gambles on staying out.
+   */
+  forecastTrust: number;
   /** Where the car started. Breaks ties before anyone has set a lap time. */
   gridPosition: number;
   /** The crew, in the order they take over. */
@@ -106,8 +118,10 @@ export interface Race {
   isFinished(): boolean;
   result(): RaceResult;
   events(): readonly RaceEvent[];
-  /** What the pit wall believes the weather is about to do. */
+  /** What your pit wall believes the weather is about to do. */
   forecast(horizon?: number): ForecastEntry[];
+  /** What a particular team's pit wall believes. Every team reads it differently. */
+  forecastFor(teamId: string, horizon?: number): ForecastEntry[];
 }
 
 function resolveTotalLaps(config: RaceConfig): number {
@@ -194,7 +208,11 @@ export function createRace(config: RaceConfig, seed: string): Race {
       pendingPit: null,
       plannedStintLaps: plannedStint(entry.startingCompound, track.tyreWearFactor, streams.strategy),
       manualPace: false,
-      reactionLaps: streams.strategy.chance(team.pitCrewSkill * 0.55) ? 0 : 1 + streams.strategy.int(2),
+      // Now that the well-run teams can see rain coming and move early, the ones
+      // reacting to it should take longer to get organised — otherwise the early
+      // movers and the reactors all arrive in the pit lane together.
+      reactionLaps: streams.strategy.chance(team.pitCrewSkill * 0.3) ? 0 : 1 + streams.strategy.int(3),
+      forecastTrust: forecastTrustFor(team) + streams.strategy.range(-0.14, 0.14),
       paceEmaMs: 0,
       gridPosition: 0,
       classPosition: 0,
@@ -314,6 +332,30 @@ export function createRace(config: RaceConfig, seed: string): Race {
     events.push({ lap, type: 'caution', phase: 'deployed' });
   }
 
+  /**
+   * Every team forecasts for itself.
+   *
+   * One shared forecast would put all twenty cars in the pit lane on the same
+   * lap the moment rain was called — the failure the reaction delay was added
+   * to stop. Seeding each team's doubt separately means they disagree, commit
+   * at different moments, and some of them are wrong.
+   */
+  function teamForecast(teamId: string, horizon = FORECAST_HORIZON): ForecastEntry[] {
+    const team = resolveTeam(teamId);
+    return forecastFrom(
+      weatherTimeline,
+      lap,
+      `${seed}:${teamId}`,
+      horizon,
+      forecastAccuracy(team),
+    );
+  }
+
+  function playerTeamId(): string {
+    const entry = config.entries.find((e) => e.carId === config.playerCarId);
+    return entry?.teamId ?? config.entries[0]?.teamId ?? '';
+  }
+
   function runStrategy(): void {
     for (const car of active()) {
       if (car.id === config.playerCarId) continue;
@@ -345,6 +387,10 @@ export function createRace(config: RaceConfig, seed: string): Race {
         fuelPerLapKg: track.fuelPerLapKg,
         stintSeconds: car.stintSeconds,
         maxStintSeconds: regulations.stints.maxDriverStintSeconds,
+        lap,
+        forecast: teamForecast(car.teamId),
+        forecastLookahead: forecastLookaheadFor(car.team),
+        forecastTrust: car.forecastTrust,
         regulations,
         rng: streams.strategy,
       });
@@ -771,7 +817,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
     tick,
     isFinished: () => finished,
     events: () => events,
-    forecast: (horizon = FORECAST_HORIZON) => forecastFrom(weatherTimeline, lap, seed, horizon),
+    forecast: (horizon = FORECAST_HORIZON) => teamForecast(playerTeamId(), horizon),
+    forecastFor: (teamId, horizon = FORECAST_HORIZON) => teamForecast(teamId, horizon),
     result: () => ({
       trackId: track.id,
       seed,
