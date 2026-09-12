@@ -137,3 +137,23 @@ export function forecastTrustFor(team: { pitCrewSkill: number }): number {
   const quality = Math.max(0, Math.min(1, (team.pitCrewSkill - 0.65) / 0.3));
   return 0.9 - 0.3 * quality;
 }
+
+/**
+ * The conditions a weekend starts in.
+ *
+ * Derived from the seed and the circuit rather than passed in, so that a wet
+ * start is something a season can hand you instead of something only a test can
+ * arrange. It is a pure function of the two, which is what lets qualifying and
+ * the race reach the same conclusion without being told.
+ */
+export function rollStartingWeather(
+  track: { id: string; weatherVolatility: number },
+  seed: string,
+): WeatherState {
+  const roll = sampleAt(seed, 'startingWeather', track.id);
+  const wetChance = track.weatherVolatility * 0.07;
+  const dampChance = track.weatherVolatility * 0.18;
+  if (roll < wetChance) return 'wet';
+  if (roll < wetChance + dampChance) return 'damp';
+  return 'dry';
+}

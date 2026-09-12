@@ -574,3 +574,5 @@ input[type='text'], input[type='number'] {
 /* Sets remaining, against a compound. */
 .chip__sets { font-size: 11px; color: var(--dim); margin-left: 5px; }
 .chip:disabled .chip__sets { color: var(--dimmer); }
+
+.quali__conditions { display: flex; align-items: center; gap: 10px; margin: -22px 0 30px; color: var(--dim); font-size: 15px; }

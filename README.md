@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 184 tests, including a statistical balance suite
+npm test           # 198 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -140,6 +140,17 @@ Which is the point. Without a price, the quickest tyre is simply the right
 answer every time, and a choice with one right answer is not a choice.
 
 A car whose lap is deleted starts at the back, whatever class it is in.
+
+## Conditions
+
+A weekend decides its own weather from its seed and its circuit, so a wet
+Saturday is something the game hands you rather than something only a test can
+arrange. Sable Dunes starts dry in 97 of 100 weekends; Monte Cielo is damp or
+wet in one weekend in five.
+
+Qualifying and the race reach the same conclusion independently, because the
+conditions are a pure function of the seed and the track rather than something
+one session tells the other.
 
 ## The forecast
 

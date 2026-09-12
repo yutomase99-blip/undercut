@@ -19,7 +19,6 @@ const result = simulate(
     track,
     regulations: openWheelOverLaps(laps),
     entries: defaultGrid(),
-    startingWeather: 'dry',
   },
   seed,
 );

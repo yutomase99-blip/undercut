@@ -8,9 +8,10 @@ import {
   type QualifyingLap,
   type QualifyingResult,
   type RaceConfig,
+  type WeatherState,
 } from '@undercut/engine';
 import { el } from './dom.ts';
-import { COMPOUND_LOOK, lapTime } from './format.ts';
+import { COMPOUND_LOOK, lapTime, WEATHER_LABEL } from './format.ts';
 
 export interface QualifyingOptions {
   app: HTMLElement;
@@ -31,7 +32,8 @@ export interface QualifyingOptions {
  */
 export function renderQualifying(options: QualifyingOptions): void {
   const session = createQualifying(options.config, options.seed);
-  const allowed = allowedCompounds(options.config);
+  const conditions = session.conditions();
+  const allowed = allowedCompounds(options.config, conditions);
 
   let chosenSlot = Math.floor(session.state().slots * 0.6);
   let chosenCompound: CompoundId = allowed[0] ?? 'medium';
@@ -53,6 +55,13 @@ export function renderQualifying(options: QualifyingOptions): void {
         ? 'Qualifying'
         : `Qualifying <em>${state.segmentName}</em>`;
     page.append(mark);
+
+    const conditionsLine = el('p', 'quali__conditions');
+    conditionsLine.innerHTML =
+      conditions === 'dry'
+        ? `<span class="badge">DRY</span> Track is dry.`
+        : `<span class="badge badge--${conditions === 'wet' ? 'wet' : 'damp'}">${WEATHER_LABEL[conditions]}</span> ${conditions === 'wet' ? 'It is raining. Dry tyres are not an option.' : 'The track is damp. Intermediates only.'}`;
+    page.append(conditionsLine);
     page.append(
       el(
         'p',
@@ -220,9 +229,9 @@ export function renderQualifying(options: QualifyingOptions): void {
   }
 }
 
-function allowedCompounds(config: RaceConfig): CompoundId[] {
+function allowedCompounds(config: RaceConfig, conditions: WeatherState): CompoundId[] {
   const dry: CompoundId[] = ['soft', 'medium', 'hard'];
   const wet: CompoundId[] = ['intermediate', 'wet'];
-  const pool = config.startingWeather === 'dry' ? dry : wet;
+  const pool = conditions === 'dry' ? dry : wet;
   return pool.filter((c) => config.regulations.tyreRules.allowedCompounds.includes(c));
 }

@@ -29,12 +29,14 @@ import { computeLapTime, PACE_FUEL_FACTOR, PACE_WEAR_FACTOR } from './lapTime.ts
 import { tyreConditionPct } from './tyres.ts';
 import { overtakeChance } from './overtake.ts';
 import { pitStopMs, totalPitLossMs } from './pit.ts';
+import { suitableCompounds } from './weather.ts';
 import {
   FORECAST_HORIZON,
   forecastAccuracy,
   forecastFrom,
   forecastLookaheadFor,
   forecastTrustFor,
+  rollStartingWeather,
   rollWeatherTimeline,
   type ForecastEntry,
 } from './weather.ts';
@@ -167,6 +169,11 @@ export function createRace(config: RaceConfig, seed: string): Race {
   const durationMs =
     regulations.raceLength.kind === 'duration' ? regulations.raceLength.seconds * 1000 : null;
 
+  // Resolved before anything else: the tyres a car is fitted with at the start
+  // depend on it, and so does the first event announced.
+  const startingWeather: WeatherState =
+    config.startingWeather ?? rollStartingWeather(track, seed);
+
   const classes = new Map(regulations.classes.map((c) => [c.id, c]));
 
   // Per-race roster wins over the registered content, so a developed car races
@@ -182,6 +189,19 @@ export function createRace(config: RaceConfig, seed: string): Race {
     const carClass = classes.get(entry.classId) ?? regulations.classes[0];
     if (!carClass) throw new Error('Regulations declare no classes');
     const roster = entry.driverIds && entry.driverIds.length > 0 ? entry.driverIds : [entry.driverId];
+
+    // Nobody starts a wet race on slicks. A car not tied to a qualifying tyre
+    // keeps whatever it was entered on, unless the conditions make that absurd.
+    const allocation = config.tyreSets?.get(entry.carId)
+      ? ({ ...(config.tyreSets.get(entry.carId) as TyreAllocation) })
+      : allocationFor(regulations);
+    const suitable = suitableCompounds(startingWeather).filter((c) =>
+      regulations.tyreRules.allowedCompounds.includes(c),
+    );
+    const startingCompound = suitable.includes(entry.startingCompound)
+      ? entry.startingCompound
+      : (availableCompound(allocation, suitable[0] ?? entry.startingCompound, suitable) ??
+        entry.startingCompound);
     // Where refuelling is allowed the car carries a tank, not a whole race.
     const fuelCapacityKg = carClass.fuelCapacityKg ?? track.fuelPerLapKg * totalLaps * 1.03;
     const startingFuelKg = regulations.refuelling
@@ -200,13 +220,13 @@ export function createRace(config: RaceConfig, seed: string): Race {
       raceTimeMs: 0,
       lastLapMs: 0,
       bestLapMs: Number.POSITIVE_INFINITY,
-      compound: entry.startingCompound,
+      compound: startingCompound,
       tyreAgeLaps: 0,
       tyreConditionPct: 100,
       fuelKg: startingFuelKg,
       paceMode: 'hold',
       pitStops: 0,
-      compoundsUsed: [entry.startingCompound],
+      compoundsUsed: [startingCompound],
       retired: false,
       retiredCause: null,
       gapToLeaderMs: 0,
@@ -216,7 +236,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
       driver,
       carClass,
       pendingPit: null,
-      plannedStintLaps: plannedStint(entry.startingCompound, track.tyreWearFactor, streams.strategy),
+      plannedStintLaps: plannedStint(startingCompound, track.tyreWearFactor, streams.strategy),
       manualPace: false,
       // Now that the well-run teams can see rain coming and move early, the ones
       // reacting to it should take longer to get organised — otherwise the early
@@ -225,9 +245,8 @@ export function createRace(config: RaceConfig, seed: string): Race {
       forecastTrust: forecastTrustFor(team) + streams.strategy.range(-0.14, 0.14),
       paceEmaMs: 0,
       gridPosition: 0,
-      allocation: config.tyreSets?.get(entry.carId)
-        ? { ...(config.tyreSets.get(entry.carId) as TyreAllocation) }
-        : allocationFor(regulations),
+      // The set the car starts the race on comes out of the same garage.
+      allocation: takeSet(allocation, startingCompound),
       classPosition: 0,
       stintSeconds: 0,
       driversUsed: [entry.driverId],
@@ -271,12 +290,11 @@ export function createRace(config: RaceConfig, seed: string): Race {
   });
 
   const byId = new Map(cars.map((car) => [car.id, car]));
-  const events: RaceEvent[] = [
-    { lap: 0, type: 'raceStart', weather: config.startingWeather },
-  ];
+
+  const events: RaceEvent[] = [{ lap: 0, type: 'raceStart', weather: startingWeather }];
 
   let lap = 0;
-  let weather: WeatherState = config.startingWeather;
+  let weather: WeatherState = startingWeather;
   let caution: CautionPhase = 'none';
   let cautionLapsRemaining = 0;
   let finished = false;
@@ -285,7 +303,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
   // real future to be more or less right about. One extra entry covers the
   // final lap without leaving a forecast dangling past the flag.
   const weatherTimeline = rollWeatherTimeline(
-    config.startingWeather,
+    startingWeather,
     totalLaps + 1,
     track.weatherVolatility,
     streams.weather,
