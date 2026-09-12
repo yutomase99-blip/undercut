@@ -8,6 +8,7 @@ import type {
   Track,
 } from '../types.ts';
 import type { Rng } from '../rng/streams.ts';
+import { setupPenaltyMs } from './setup.ts';
 import { tyreDeltaMs } from './tyres.ts';
 
 /** Time cost of a kilogram of fuel over one lap. */
@@ -38,6 +39,8 @@ export interface LapTimeInput {
   paceMode: PaceMode;
   /** How wet the track surface is, 0 to 1. */
   wetness: number;
+  /** Wing level this car is running. */
+  downforce: number;
   /** Time lost behind another car this lap, decided by the race loop. */
   trafficMs: number;
   /**
@@ -69,6 +72,7 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
   const trafficMs = input.trafficMs;
   const paceMs = PACE_DELTA_MS[input.paceMode];
   const surfaceMs = input.surfaceMs ?? 0;
+  const setupMs = setupPenaltyMs(input.track, input.downforce);
 
   // A mistake costs time; a exceptional lap saves a little. The floor keeps
   // the distribution honest — nobody finds two seconds out of nowhere.
@@ -76,7 +80,17 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
   const errorMs = Math.max(-150, input.rng.normal(0, sigma));
 
   const totalMs =
-    baseMs + classMs + carMs + driverMs + tyreMs + fuelMs + trafficMs + paceMs + surfaceMs + errorMs;
+    baseMs +
+    classMs +
+    carMs +
+    driverMs +
+    tyreMs +
+    fuelMs +
+    trafficMs +
+    paceMs +
+    surfaceMs +
+    setupMs +
+    errorMs;
 
   return {
     baseMs,
@@ -88,6 +102,7 @@ export function computeLapTime(input: LapTimeInput): LapBreakdown {
     trafficMs,
     paceMs,
     surfaceMs,
+    setupMs,
     errorMs,
     totalMs,
   };

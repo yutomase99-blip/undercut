@@ -25,6 +25,7 @@ function lap(overrides: Partial<Parameters<typeof computeLapTime>[0]> = {}) {
     fuelKg: 20,
     paceMode: 'hold',
     wetness: 0,
+    downforce: track.idealDownforce,
     trafficMs: 0,
     rng: streams.driverError,
     ...overrides,
@@ -44,6 +45,7 @@ describe('lap time model', () => {
       b.trafficMs +
       b.paceMs +
       b.surfaceMs +
+      b.setupMs +
       b.errorMs;
     expect(b.totalMs).toBeCloseTo(sum, 6);
   });
@@ -95,6 +97,7 @@ describe('lap time model', () => {
           fuelKg: 20,
           paceMode: 'hold',
           wetness: 0,
+        downforce: track.idealDownforce,
           trafficMs: 0,
           rng: streams.driverError,
         }).errorMs,
@@ -118,6 +121,7 @@ describe('lap time model', () => {
         fuelKg: 110,
         paceMode: 'push',
         wetness: 0,
+        downforce: track.idealDownforce,
         trafficMs: 1500,
         rng: streams.driverError,
       });

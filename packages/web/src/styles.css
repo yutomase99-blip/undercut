@@ -576,3 +576,23 @@ input[type='text'], input[type='number'] {
 .chip:disabled .chip__sets { color: var(--dimmer); }
 
 .quali__conditions { display: flex; align-items: center; gap: 10px; margin: -22px 0 30px; color: var(--dim); font-size: 15px; }
+
+/* ---------- car setup ---------- */
+
+.wing { display: flex; align-items: flex-end; gap: 5px; }
+
+.wing__step {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 6px 0 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.wing__step:hover { border-color: var(--dimmer); }
+.wing__step[aria-pressed='true'] { border-color: var(--text); }
+.wing__step--suggested .wing__bar { background: var(--green); }
+.wing__bar { display: block; width: 70%; background: var(--dimmer); border-radius: 1px; }
+.wing__ends { display: flex; justify-content: space-between; }

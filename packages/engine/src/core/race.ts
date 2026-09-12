@@ -30,6 +30,7 @@ import { tyreConditionPct } from './tyres.ts';
 import { overtakeChance } from './overtake.ts';
 import { pitStopMs, totalPitLossMs } from './pit.ts';
 import { suitableCompounds } from './weather.ts';
+import { fuelFactorFor, overtakeShiftFor, suggestedDownforce, tyreLoadFor } from './setup.ts';
 import {
   FORECAST_HORIZON,
   forecastAccuracy,
@@ -160,6 +161,7 @@ function emptyBreakdown(totalMs: number): LapBreakdown {
     trafficMs: 0,
     paceMs: 0,
     surfaceMs: 0,
+    setupMs: 0,
     errorMs: 0,
     totalMs,
   };
@@ -225,6 +227,9 @@ export function createRace(config: RaceConfig, seed: string): Race {
       lastLapMs: 0,
       bestLapMs: Number.POSITIVE_INFINITY,
       compound: startingCompound,
+      // A car runs the setup it was entered on, or the one its engineers
+      // arrived at for this circuit.
+      downforce: entry.downforce ?? suggestedDownforce(track, team, seed),
       tyreAgeLaps: 0,
       tyreConditionPct: 100,
       fuelKg: startingFuelKg,
@@ -534,6 +539,7 @@ export function createRace(config: RaceConfig, seed: string): Race {
           fuelKg: car.fuelKg,
           paceMode: car.paceMode,
           wetness,
+          downforce: car.downforce,
           trafficMs: lappedTrafficMs(car),
           rng: streams.driverError,
         });
@@ -618,7 +624,11 @@ export function createRace(config: RaceConfig, seed: string): Race {
 
           if (!underCaution && sustainedAdvantageMs >= ATTEMPT_THRESHOLD_MS && !onCooldown) {
             const chance = overtakeChance({
-              paceAdvantageMs: Math.max(sustainedAdvantageMs, closingMs),
+              // Straight-line speed decides where passes actually happen, so
+              // the wing each car is carrying counts alongside pace.
+              paceAdvantageMs:
+                Math.max(sustainedAdvantageMs, closingMs) +
+                overtakeShiftFor(car.downforce, defender.downforce),
               attackerAggression: car.driver.aggression,
               defenderSkill: defender.driver.skill,
               trackDifficulty: track.overtakingDifficulty,
@@ -673,10 +683,12 @@ export function createRace(config: RaceConfig, seed: string): Race {
         car.bestLapMs = Math.min(car.bestLapMs, lapTimeMs);
       }
 
-      const wearMultiplier = underCaution ? 0.3 : PACE_WEAR_FACTOR[car.paceMode];
+      const wearMultiplier =
+        (underCaution ? 0.3 : PACE_WEAR_FACTOR[car.paceMode]) * tyreLoadFor(car.downforce);
       car.tyreAgeLaps += wearMultiplier + (extraWear.get(car.id) ?? 0);
 
-      const fuelMultiplier = underCaution ? 0.6 : PACE_FUEL_FACTOR[car.paceMode];
+      const fuelMultiplier =
+        (underCaution ? 0.6 : PACE_FUEL_FACTOR[car.paceMode]) * fuelFactorFor(car.downforce);
       car.fuelKg = Math.max(0, car.fuelKg - track.fuelPerLapKg * fuelMultiplier);
       if (car.fuelKg < 1.5 && car.paceMode !== 'save' && !car.retired) {
         car.paceMode = 'save';
