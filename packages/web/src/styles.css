@@ -550,3 +550,23 @@ input[type='text'], input[type='number'] {
 .slot__index { font-size: 11px; color: var(--dimmer); }
 .slot__net { font-size: 14px; font-weight: 700; }
 .slot__cars { font-size: 11px; color: var(--dim); }
+
+/* ---------- forecast ---------- */
+
+.forecast { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.forecast__head { display: flex; align-items: baseline; justify-content: space-between; }
+.forecast__call { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.forecast__cells { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+
+.forecast__cell {
+  display: grid;
+  gap: 1px;
+  padding: 5px 2px;
+  text-align: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.forecast__lap { font-size: 10px; color: var(--dimmer); }
+.forecast__state { font-size: 11px; font-weight: 700; }
+.forecast__confidence { font-size: 9px; color: var(--dimmer); }

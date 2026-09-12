@@ -1,8 +1,8 @@
 # Undercut — Design Spec
 
 **Date:** 2026-09-12
-**Status:** all four stages implemented, plus a qualifying session (added after
-the original scope).
+**Status:** all four stages implemented, plus a qualifying session and a weather
+forecast (both added after the original scope).
 
 ## 1. What this is
 
@@ -191,7 +191,30 @@ abstracted lap per car; it is now a session.
 - Adding a `qualifying` randomness stream disturbed no existing seed, which is
   the split-stream design in section 7 paying for itself.
 
-## 13. Delivery
+## 13. The weather forecast
+
+The pit wall is given the next six laps of weather with a confidence against
+each.
+
+- **The race's weather is rolled up front**, from the seed, at race creation.
+  That is what makes a forecast possible: there is a real future to be more or
+  less right about rather than a coin waiting to be flipped.
+- **Doubt is addressed, not drawn.** `sampleAt(seed, ...keys)` returns *the*
+  value for a key rather than the next value in a sequence, so the doubt
+  attached to lap 32 is identical every time it is consulted. A stream could not
+  do this: the forecast is redrawn every lap, and a sequential draw would give a
+  different answer each time.
+- **It converges.** Confidence rises as a lap approaches; once it overtakes that
+  lap's fixed doubt, the call settles on the truth and stays there. A forecast
+  that flickered would be noise rather than information.
+- **It is fallible at range**, by design. An infallible forecast is an
+  instruction, not a decision.
+- **The AI does not get it.** Rival pit walls still react to weather after it
+  arrives, on the reaction delay added with the endurance ruleset. Giving them
+  foresight is a balance change, not a rendering one, and is deliberately left
+  out of this change.
+
+## 14. Delivery
 
 TypeScript, Node 22+, Vitest, ESLint. `engine` has zero runtime dependencies.
 The web app builds with Vite and deploys to GitHub Pages from CI. MIT licensed.

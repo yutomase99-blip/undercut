@@ -91,6 +91,18 @@ function makeRng(seed: number): Rng {
   };
 }
 
+/**
+ * A draw addressed by key rather than by position in a sequence.
+ *
+ * A stream gives you the next number; this gives you *the* number for a
+ * particular thing. The forecast needs that: the doubt attached to lap 32 has
+ * to be the same value every time it is looked up, however many times the
+ * forecast is redrawn between now and then.
+ */
+export function sampleAt(seed: string, ...keys: (string | number)[]): number {
+  return mulberry32(hashSeed(`${seed}::${keys.join(':')}`))();
+}
+
 export function createStreams(seed: string): Streams {
   const streams = {} as Streams;
   for (const name of STREAM_NAMES) {
