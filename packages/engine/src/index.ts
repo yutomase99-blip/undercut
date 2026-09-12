@@ -1,6 +1,8 @@
 export * from './types.ts';
 export type { Regulations } from './rules/regulations.ts';
 export { OPEN_WHEEL, openWheelOverLaps } from './rules/openwheel.ts';
+export { ENDURANCE, ENDURANCE_CLASSES, enduranceOverHours } from './rules/endurance.ts';
+export { ENDURANCE_TEAMS, ENDURANCE_DRIVERS, enduranceGrid } from './content/enduranceGrid.ts';
 export { COMPOUNDS, DRY_COMPOUNDS } from './content/compounds.ts';
 export { TRACKS, trackById } from './content/tracks.ts';
 export { TEAMS, DRIVERS, teamById, driverById, defaultGrid } from './content/grid.ts';

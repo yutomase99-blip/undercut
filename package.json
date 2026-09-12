@@ -18,7 +18,8 @@
     "race": "node --experimental-strip-types packages/cli/src/race.ts",
     "balance": "node --experimental-strip-types packages/cli/src/balance.ts",
     "dev": "npm run dev --workspace @undercut/web",
-    "build": "npm run build --workspace @undercut/web"
+    "build": "npm run build --workspace @undercut/web",
+    "endurance": "node --experimental-strip-types packages/cli/src/endurance.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

@@ -30,3 +30,12 @@ export const WEATHER_LABEL: Record<WeatherState, string> = {
   damp: 'DAMP',
   wet: 'WET',
 };
+
+/** Race clock, used where a race is limited by time rather than laps. */
+export function clock(ms: number): string {
+  const safe = Math.max(0, ms);
+  const hours = Math.floor(safe / 3600000);
+  const minutes = Math.floor((safe % 3600000) / 60000);
+  const seconds = Math.floor((safe % 60000) / 1000);
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}

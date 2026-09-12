@@ -1,4 +1,5 @@
 import type { Driver, Entry, Team } from '../types.ts';
+import { registerDrivers, registerTeams } from './registry.ts';
 
 /**
  * Ten invented teams, twenty invented drivers. No real-world motorsport
@@ -53,17 +54,10 @@ export const DRIVERS: Driver[] = [
   { id: 'd-ellery',   name: 'W. Ellery',    skill: 0.62, consistency: 0.68, aggression: 0.73 },
 ];
 
-export function teamById(id: string): Team {
-  const team = TEAMS.find((t) => t.id === id);
-  if (!team) throw new Error(`Unknown team: ${id}`);
-  return team;
-}
+registerTeams(TEAMS);
+registerDrivers(DRIVERS);
 
-export function driverById(id: string): Driver {
-  const driver = DRIVERS.find((d) => d.id === id);
-  if (!driver) throw new Error(`Unknown driver: ${id}`);
-  return driver;
-}
+export { driverById, teamById } from './registry.ts';
 
 /**
  * Gives every team one senior driver and one junior, rather than handing the
