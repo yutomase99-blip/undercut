@@ -46,7 +46,12 @@ export function renderQualifying(options: QualifyingOptions): void {
     const page = el('div', 'setup quali');
 
     const mark = el('h1', 'setup__mark');
-    mark.innerHTML = `Qualifying <em>${state.segmentName}</em>`;
+    // A knockout segment is named ("Q2"); a single session is just called
+    // qualifying, and "Qualifying Qualifying" reads like a stutter.
+    mark.innerHTML =
+      state.segmentName.toLowerCase() === 'qualifying'
+        ? 'Qualifying'
+        : `Qualifying <em>${state.segmentName}</em>`;
     page.append(mark);
     page.append(
       el(

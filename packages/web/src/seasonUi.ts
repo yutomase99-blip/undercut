@@ -214,11 +214,12 @@ export function renderSeasonHub(season: SeasonState, deps: SeasonDeps): void {
     const nextPanel = el('div', 'panel hub__panel');
     nextPanel.append(el('span', 'eyebrow', 'Next round'));
     nextPanel.append(el('h2', 'hub__title', track.name));
+    const unit = series.lengthLabel.toLowerCase().replace(/s$/, '');
     nextPanel.append(
       el(
         'p',
         'hub__note',
-        `${season.config.raceLength} ${series.lengthLabel.toLowerCase()} · ${track.country}`,
+        `${season.config.raceLength} ${unit}${season.config.raceLength === 1 ? '' : 's'} · ${track.country}`,
       ),
     );
     const race = el('button', 'start', 'Race this round');
