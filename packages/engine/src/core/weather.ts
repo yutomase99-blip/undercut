@@ -83,16 +83,57 @@ export function forecastFrom(
   currentLap: number,
   seed: string,
   horizon = FORECAST_HORIZON,
+  accuracy = 1,
 ): ForecastEntry[] {
   const entries: ForecastEntry[] = [];
   for (let ahead = 1; ahead <= horizon; ahead += 1) {
     const lap = currentLap + ahead;
     const truth = timeline[lap];
     if (truth === undefined) break;
-    const confidence = confidenceAt(ahead);
+    const confidence = Math.min(1, confidenceAt(ahead) * accuracy);
     const doubt = sampleAt(seed, 'forecast', lap);
     const state = doubt > confidence ? nudge(truth, sampleAt(seed, 'forecast-direction', lap)) : truth;
     entries.push({ lap, state, confidence });
   }
   return entries;
+}
+
+/**
+ * How good a team is at reading the weather.
+ *
+ * Taken from pit-crew skill, which already stands for how well a team is run on
+ * a Sunday rather than how quick its car is. A well-drilled operation has a
+ * better meteorologist too.
+ */
+export function forecastAccuracy(team: { pitCrewSkill: number }): number {
+  const quality = Math.max(0, Math.min(1, (team.pitCrewSkill - 0.65) / 0.3));
+  return 0.8 + 0.35 * quality;
+}
+
+/**
+ * How many laps ahead a team will actually commit to a call.
+ *
+ * The value of a forecast is a lap or two of anticipation, not six: fitting wet
+ * tyres five laps before the rain arrives loses far more than it saves. The
+ * best-run teams move a lap or two early; the worst wait until it is raining.
+ */
+export function forecastLookaheadFor(team: { pitCrewSkill: number }): number {
+  const quality = Math.max(0, Math.min(1, (team.pitCrewSkill - 0.65) / 0.3));
+  return 1 + Math.round(quality * 2);
+}
+
+/**
+ * How sure a team insists on being before it acts.
+ *
+ * This is what staggers the field. Confidence in a given change climbs as it
+ * approaches, so a team that commits at 60% moves several laps before one that
+ * waits for 85% — and the nervous end of the grid never commits early at all,
+ * and is left reacting to rain that is already falling.
+ *
+ * Without a personal threshold every pit wall reaches the same conclusion on
+ * the same lap, and eighteen of twenty cars arrive in the pit lane together.
+ */
+export function forecastTrustFor(team: { pitCrewSkill: number }): number {
+  const quality = Math.max(0, Math.min(1, (team.pitCrewSkill - 0.65) / 0.3));
+  return 0.9 - 0.3 * quality;
 }

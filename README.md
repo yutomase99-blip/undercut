@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 155 tests, including a statistical balance suite
+npm test           # 171 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -143,6 +143,25 @@ It is also **wrong sometimes**, and more often the further out it looks. A
 forecast that is always right is not a decision — it is an instruction. Six laps
 out you are being told something worth roughly half a guess; one lap out you can
 bet the race on it.
+
+**Every team forecasts for itself**, including yours. A well-drilled team reads
+the weather better and commits to a call sooner; a badly run one needs to be
+more certain before it moves, and is often still waiting when the rain arrives.
+Pick a team at the back of the grid and you will see it in the confidence
+figures.
+
+Over 200 wet races, when the first drops fall:
+
+| Team | Crew | Fits wets |
+|------|------|-----------|
+| Meridian Racing | 0.94 | 2.8 laps before the rain |
+| Valdor Works | 0.86 | 2.0 laps before |
+| Halvard Racing | 0.74 | 0.9 laps before |
+| Corvid Racing | 0.68 | 0.6 laps *after* |
+
+Nobody shares a forecast, which matters more than it sounds: one forecast for
+the whole field would put eighteen of twenty cars in the pit lane on the same
+lap.
 
 ## The season
 

@@ -209,10 +209,22 @@ each.
   that flickered would be noise rather than information.
 - **It is fallible at range**, by design. An infallible forecast is an
   instruction, not a decision.
-- **The AI does not get it.** Rival pit walls still react to weather after it
-  arrives, on the reaction delay added with the endurance ruleset. Giving them
-  foresight is a balance change, not a rendering one, and is deliberately left
-  out of this change.
+- **Every team forecasts for itself**, the player included. Three team traits,
+  all derived from pit-crew skill (which already stands for how well a team is
+  run on a Sunday): how accurate its forecast is, how many laps ahead it will
+  commit, and how sure it insists on being first.
+- **Sharing one forecast does not work.** With a single forecast the whole field
+  reaches the same conclusion on the same lap and eighteen of twenty cars arrive
+  in the pit lane together — the failure the reaction delay was added to stop.
+  Seeding each team's doubt separately was not enough on its own, because
+  confidence only takes a handful of distinct values as a change approaches; the
+  commitment threshold had to become personal too, with a per-car bias on top of
+  the team's.
+- **Anticipation and reaction must play for the same conditions.** When they did
+  not, a car that had just fitted wets for expected rain was immediately sent
+  back out for dries, because the track was still dry — twenty cars produced
+  forty-three stops in three laps. The strategist now decides against the
+  conditions it is *playing for* rather than the ones outside the window.
 
 ## 14. Delivery
 
