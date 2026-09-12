@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 246 tests, including a statistical balance suite
+npm test           # 274 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -231,6 +231,21 @@ Over 200 wet races, when the first drops fall:
 Nobody shares a forecast, which matters more than it sounds: one forecast for
 the whole field would put eighteen of twenty cars in the pit lane on the same
 lap.
+
+## Drivers, and the car they drive
+
+Every result since the first version has been decided by three numbers per
+driver — pace, consistency, aggression — and none of them were ever on screen.
+They are now: on the team picker, in the garage before you set the car up, and
+in the season hub.
+
+The car is a set of parts rather than a single rating. Engine, aerodynamics and
+chassis make it quick; the gearbox decides whether it finishes; the suspension
+decides how kindly it treats its tyres. Each has a quality you can improve and a
+condition that racing wears away, and a tired part is not the part you bought.
+
+That is the trade a single development number could not express: a quicker
+engine, or a gearbox that will still be there in November.
 
 ## The season
 

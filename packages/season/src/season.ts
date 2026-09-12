@@ -14,15 +14,29 @@ import {
   type Team,
 } from '@undercut/engine';
 import { awardPoints } from './points.ts';
+import {
+  PART_IDS,
+  PART_LABEL,
+  PART_NOTE,
+  carPerformanceFrom,
+  fitPartsFor,
+  partCost,
+  reliabilityFrom,
+  repairPart,
+  runWear,
+  tyreWearFrom,
+  upgradePart,
+  type CarParts,
+  type PartId,
+} from './parts.ts';
 import type {
   DriverStanding,
+  GarageOption,
   RoundResult,
   SeasonConfig,
   SeasonState,
   TeamDevelopment,
   TeamStanding,
-  UpgradeArea,
-  UpgradeOption,
 } from './types.ts';
 
 export const SEASON_VERSION = 1;
@@ -42,86 +56,102 @@ export function budgetFor(carPerformance: number): number {
   return Math.round(100 + (CEILING - carPerformance) * 320);
 }
 
-const AREA_LABEL: Record<UpgradeArea, string> = {
-  aero: 'Aerodynamics',
-  reliability: 'Reliability',
-  pitCrew: 'Pit crew',
-};
-
-const AREA_DESCRIPTION: Record<UpgradeArea, string> = {
-  aero: 'Lap time. The most direct way to move up the order.',
-  reliability: 'Fewer cars stopping on track. Points you already earned.',
-  pitCrew: 'Quicker stops, and fewer that go wrong.',
-};
-
-const TIERS = [
-  { id: 'minor', label: 'Minor', cost: 40, factor: 0.25 },
-  { id: 'major', label: 'Major', cost: 90, factor: 0.6 },
-];
-
-function ratingFor(team: TeamDevelopment, area: UpgradeArea): number {
-  if (area === 'aero') return team.carPerformance;
-  if (area === 'reliability') return team.reliability;
-  return team.pitCrewSkill;
+/** Everything about a car that the race needs, read back off its parts. */
+export function syncDerived(team: TeamDevelopment): TeamDevelopment {
+  return {
+    ...team,
+    carPerformance: carPerformanceFrom(team.parts),
+    reliability: reliabilityFrom(team.parts),
+    tyreWear: tyreWearFrom(team.parts),
+  };
 }
 
 /**
- * What an upgrade is worth.
+ * What the garage can do this week.
  *
- * Most of the gain scales with how much headroom a rating has left, so a poor
- * car improves faster than a good one — but the constant keeps a front-runner's
- * development from being pointless.
+ * Upgrades make a part better and rebuilds make it new again, and the budget
+ * has to cover both. That is the trade the old single development number could
+ * not express: a quicker engine, or a gearbox that will still be there in
+ * November.
  */
-function gainFor(team: TeamDevelopment, area: UpgradeArea, factor: number): number {
-  const headroom = Math.max(0, CEILING - ratingFor(team, area));
-  return factor * (0.25 * headroom + 0.02);
+export function garageOptions(team: TeamDevelopment): GarageOption[] {
+  const options: GarageOption[] = [];
+  for (const id of PART_IDS) {
+    const part = team.parts[id];
+
+    const upgradeCost = partCost(id, 'upgrade');
+    const upgraded = upgradePart(team.parts, id)[id].level;
+    options.push({
+      id: `${id}-upgrade`,
+      part: id,
+      action: 'upgrade',
+      label: `Upgrade ${PART_LABEL[id].toLowerCase()}`,
+      description: PART_NOTE[id],
+      cost: upgradeCost,
+      gain: upgraded - part.level,
+      affordable: team.budget >= upgradeCost,
+      worthwhile: part.level < 0.999,
+    });
+
+    const repairCost = partCost(id, 'repair');
+    options.push({
+      id: `${id}-repair`,
+      part: id,
+      action: 'repair',
+      label: `Rebuild ${PART_LABEL[id].toLowerCase()}`,
+      description: PART_NOTE[id],
+      cost: repairCost,
+      gain: 1 - part.condition,
+      affordable: team.budget >= repairCost,
+      worthwhile: part.condition < 0.95,
+    });
+  }
+  return options;
 }
 
-export function upgradeOptions(team: TeamDevelopment): UpgradeOption[] {
-  const areas: UpgradeArea[] = ['aero', 'reliability', 'pitCrew'];
-  return areas.flatMap((area) =>
-    TIERS.map((tier) => ({
-      id: `${area}-${tier.id}`,
-      area,
-      label: `${tier.label} ${AREA_LABEL[area].toLowerCase()}`,
-      description: AREA_DESCRIPTION[area],
-      cost: tier.cost,
-      gain: gainFor(team, area, tier.factor),
-      affordable: team.budget >= tier.cost,
-    })),
-  );
-}
-
-export function applyUpgrade(team: TeamDevelopment, option: UpgradeOption): TeamDevelopment {
+export function applyGarageOption(team: TeamDevelopment, option: GarageOption): TeamDevelopment {
   if (team.budget < option.cost) return team;
-  const updated: TeamDevelopment = { ...team, budget: team.budget - option.cost };
-  const raise = (value: number) => Math.min(CEILING, value + option.gain);
-  if (option.area === 'aero') updated.carPerformance = raise(team.carPerformance);
-  else if (option.area === 'reliability') updated.reliability = raise(team.reliability);
-  else updated.pitCrewSkill = raise(team.pitCrewSkill);
-  return updated;
+  const parts: CarParts =
+    option.action === 'upgrade'
+      ? upgradePart(team.parts, option.part)
+      : repairPart(team.parts, option.part);
+  return syncDerived({ ...team, parts, budget: team.budget - option.cost });
 }
 
 /**
- * Rival teams spend between rounds, always on their weakest area.
+ * Rival teams spend between rounds.
  *
- * Deliberately simple and legible: the player should be able to predict roughly
- * where a rival is improving, and be beaten by a better plan rather than by a
- * hidden one.
+ * Deliberately legible: anything worn badly enough gets rebuilt first, and
+ * otherwise the weakest part that makes the car quicker gets the money. The
+ * player should be beaten by a better plan, not a hidden one.
  */
 export function developAi(season: SeasonState): SeasonState {
   const teams = season.teams.map((team) => {
     if (team.teamId === season.config.playerTeamId) return team;
-    const weakest: UpgradeArea = (['aero', 'reliability', 'pitCrew'] as UpgradeArea[]).sort(
-      (a, b) => ratingFor(team, a) - ratingFor(team, b),
-    )[0]!;
-    const option = upgradeOptions(team)
-      .filter((o) => o.area === weakest && o.affordable)
-      .sort((a, b) => b.cost - a.cost)[0];
-    return option ? applyUpgrade(team, option) : team;
+
+    const options = garageOptions(team).filter((o) => o.affordable && o.worthwhile);
+    const urgentRebuild = options
+      .filter((o) => o.action === 'repair' && team.parts[o.part].condition < 0.4)
+      .sort((a, b) => team.parts[a.part].condition - team.parts[b.part].condition)[0];
+    if (urgentRebuild) return applyGarageOption(team, urgentRebuild);
+
+    const bestUpgrade = options
+      .filter((o) => o.action === 'upgrade' && ['engine', 'aero', 'chassis'].includes(o.part))
+      .sort((a, b) => b.gain - a.gain)[0];
+    return bestUpgrade ? applyGarageOption(team, bestUpgrade) : team;
   });
   return { ...season, teams };
 }
+
+/** A race's worth of wear on every car. */
+export function wearField(season: SeasonState, distance = 1): SeasonState {
+  return {
+    ...season,
+    teams: season.teams.map((team) => syncDerived({ ...team, parts: runWear(team.parts, distance) })),
+  };
+}
+
+export type { PartId };
 
 function championshipTeams(championshipId: SeasonConfig['championshipId']): Team[] {
   return championshipId === 'endurance' ? ENDURANCE_TEAMS : TEAMS;
@@ -132,13 +162,17 @@ function championshipGrid(championshipId: SeasonConfig['championshipId']): Entry
 }
 
 export function createSeason(config: SeasonConfig): SeasonState {
-  const teams = championshipTeams(config.championshipId).map<TeamDevelopment>((team) => ({
-    teamId: team.id,
-    carPerformance: team.carPerformance,
-    reliability: team.reliability,
-    pitCrewSkill: team.pitCrewSkill,
-    budget: budgetFor(team.carPerformance),
-  }));
+  const teams = championshipTeams(config.championshipId).map<TeamDevelopment>((team) =>
+    syncDerived({
+      teamId: team.id,
+      parts: fitPartsFor(team),
+      carPerformance: team.carPerformance,
+      reliability: team.reliability,
+      tyreWear: 1,
+      pitCrewSkill: team.pitCrewSkill,
+      budget: budgetFor(team.carPerformance),
+    }),
+  );
 
   return {
     version: SEASON_VERSION,
@@ -172,6 +206,7 @@ export function raceConfigFor(season: SeasonState, playerCarId?: string | null):
     ...teamById(development.teamId),
     carPerformance: development.carPerformance,
     reliability: development.reliability,
+    tyreWear: development.tyreWear,
     pitCrewSkill: development.pitCrewSkill,
   }));
 
@@ -206,11 +241,11 @@ export function runRound(season: SeasonState): RoundResult {
 
 /** Files a result, moves the season on, and lets the rivals develop. */
 export function recordResult(season: SeasonState, result: RoundResult): SeasonState {
-  const advanced: SeasonState = {
+  const advanced: SeasonState = wearField({
     ...season,
     round: season.round + 1,
     results: [...season.results, result],
-  };
+  });
   return isSeasonComplete(advanced) ? advanced : developAi(advanced);
 }
 

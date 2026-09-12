@@ -1,4 +1,5 @@
 import type { CarId, Classification, DriverId, Entry, TeamId } from '@undercut/engine';
+import type { CarParts, PartId } from './parts.ts';
 
 export type ChampionshipId = 'open-wheel' | 'endurance';
 
@@ -15,8 +16,11 @@ export interface SeasonConfig {
 /** A team's car as it stands today, which is not how it left the factory. */
 export interface TeamDevelopment {
   teamId: TeamId;
+  /** The car, component by component. Everything below is derived from it. */
+  parts: CarParts;
   carPerformance: number;
   reliability: number;
+  tyreWear: number;
   pitCrewSkill: number;
   /** Development money left for the rest of the season. */
   budget: number;
@@ -55,15 +59,18 @@ export interface TeamStanding {
   wins: number;
 }
 
-export type UpgradeArea = 'aero' | 'reliability' | 'pitCrew';
+export type GarageAction = 'upgrade' | 'repair';
 
-export interface UpgradeOption {
+export interface GarageOption {
   id: string;
-  area: UpgradeArea;
+  part: PartId;
+  action: GarageAction;
   label: string;
   description: string;
   cost: number;
-  /** How much the rating improves if this is taken. */
+  /** What taking this would do: a level gain, or condition restored. */
   gain: number;
   affordable: boolean;
+  /** Worth doing: an upgrade always is, a rebuild only once something is worn. */
+  worthwhile: boolean;
 }

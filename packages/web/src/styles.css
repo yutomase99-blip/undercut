@@ -602,3 +602,40 @@ input[type='text'], input[type='number'] {
 /* A fight worth watching: within striking distance of the car ahead. */
 .row--battle { background: rgba(242, 183, 5, 0.07); }
 .row--battle .row__gap { color: var(--amber); }
+
+/* ---------- drivers ---------- */
+
+.driver {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.driver--compact { padding: 9px 11px; gap: 5px; }
+.driver__head { display: flex; align-items: baseline; justify-content: space-between; }
+.driver__name { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.driver__traits { display: grid; gap: 4px; }
+.driver__trait { display: grid; grid-template-columns: 82px 1fr 26px; gap: 8px; align-items: center; }
+.driver__label { font-family: var(--font-display); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.driver__bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.driver__bar span { display: block; height: 100%; background: var(--text); }
+.driver__value { font-size: 11px; color: var(--dim); text-align: right; }
+
+.lineup { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+
+/* ---------- the garage ---------- */
+
+.parts { display: grid; gap: 5px; }
+.part {
+  display: grid;
+  grid-template-columns: 104px 1fr 30px 1fr 38px;
+  gap: 8px;
+  align-items: center;
+}
+.part__name { font-family: var(--font-display); font-size: 15px; }
+.part__meter { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.part__meter span { display: block; height: 100%; }
+.part__value { font-size: 11px; color: var(--dim); text-align: right; }

@@ -11,8 +11,8 @@ import {
   recordResult,
   runRound,
   teamStandings,
-  upgradeOptions,
-  applyUpgrade,
+  garageOptions,
+  applyGarageOption,
 } from '../src/season.ts';
 import type { SeasonConfig } from '../src/types.ts';
 
@@ -37,7 +37,9 @@ describe('season shape', () => {
     const season = createSeason(config);
     for (const team of TEAMS) {
       const development = season.teams.find((t) => t.teamId === team.id)!;
-      expect(development.carPerformance).toBeCloseTo(team.carPerformance, 6);
+      // Built from parts now, so it reproduces the catalogue rather than
+      // copying it.
+      expect(development.carPerformance).toBeCloseTo(team.carPerformance, 2);
     }
   });
 
@@ -102,51 +104,61 @@ describe('standings', () => {
   });
 });
 
-describe('development', () => {
+describe('the garage', () => {
   it('gives the slower teams more to spend', () => {
-    const best = budgetFor(1.0);
-    const worst = budgetFor(0.66);
-    expect(worst).toBeGreaterThan(best);
+    expect(budgetFor(0.66)).toBeGreaterThan(budgetFor(1.0));
   });
 
-  it('offers upgrades a team can afford and refuses ones it cannot', () => {
-    const season = createSeason(config);
-    const team = season.teams.find((t) => t.teamId === 'kestros')!;
-    const options = upgradeOptions(team);
-    expect(options.length).toBeGreaterThan(0);
-    expect(options.some((o) => o.cost <= team.budget)).toBe(true);
-    const broke = { ...team, budget: 0 };
-    expect(upgradeOptions(broke).every((o) => !o.affordable)).toBe(true);
+  it('offers something for every part, to improve and to rebuild', () => {
+    const team = createSeason(config).teams.find((t) => t.teamId === 'kestros')!;
+    const options = garageOptions(team);
+    expect(options.filter((o) => o.action === 'upgrade')).toHaveLength(5);
+    expect(options.filter((o) => o.action === 'repair')).toHaveLength(5);
   });
 
-  it('spends budget and improves the car', () => {
-    const season = createSeason(config);
-    const team = season.teams.find((t) => t.teamId === 'kestros')!;
-    const option = upgradeOptions(team).find((o) => o.area === 'aero' && o.affordable)!;
-    const after = applyUpgrade(team, option);
+  it('marks what a team cannot afford', () => {
+    const team = createSeason(config).teams.find((t) => t.teamId === 'kestros')!;
+    expect(garageOptions({ ...team, budget: 0 }).every((o) => !o.affordable)).toBe(true);
+  });
+
+  it('does not suggest rebuilding a part that is brand new', () => {
+    const team = createSeason(config).teams.find((t) => t.teamId === 'kestros')!;
+    expect(garageOptions(team).filter((o) => o.action === 'repair' && o.worthwhile)).toHaveLength(0);
+  });
+
+  it('spends budget and makes the car quicker', () => {
+    const team = createSeason(config).teams.find((t) => t.teamId === 'kestros')!;
+    const option = garageOptions(team).find((o) => o.id === 'engine-upgrade')!;
+    const after = applyGarageOption(team, option);
     expect(after.budget).toBe(team.budget - option.cost);
     expect(after.carPerformance).toBeGreaterThan(team.carPerformance);
   });
 
-  it('gives a weak car more from the same upgrade than a strong one', () => {
+  it('rebuilds condition without touching quality', () => {
+    let season = createSeason(config);
+    season = recordResult(season, runRound(season));
+    const team = season.teams.find((t) => t.teamId === 'kestros')!;
+    const option = garageOptions(team).find((o) => o.id === 'gearbox-repair')!;
+    const after = applyGarageOption(team, option);
+    expect(after.parts.gearbox.condition).toBe(1);
+    expect(after.parts.gearbox.level).toBe(team.parts.gearbox.level);
+  });
+
+  it('gives a weaker part more from the same upgrade than a strong one', () => {
     const season = createSeason(config);
     const strong = season.teams.find((t) => t.teamId === 'meridian')!;
     const weak = season.teams.find((t) => t.teamId === 'corvid')!;
-    const gainFor = (team: typeof strong) => {
-      const option = upgradeOptions(team).find((o) => o.area === 'aero' && o.affordable)!;
-      return applyUpgrade(team, option).carPerformance - team.carPerformance;
-    };
+    const gainFor = (team: typeof strong) =>
+      garageOptions(team).find((o) => o.id === 'engine-upgrade')!.gain;
     expect(gainFor(weak)).toBeGreaterThan(gainFor(strong));
   });
 
-  it('never pushes a rating above its ceiling', () => {
-    let team = { ...createSeason(config).teams[0]!, budget: 1_000_000, carPerformance: 0.999 };
-    for (let i = 0; i < 40; i += 1) {
-      const option = upgradeOptions(team).find((o) => o.area === 'aero' && o.affordable);
-      if (!option) break;
-      team = applyUpgrade(team, option);
-    }
-    expect(team.carPerformance).toBeLessThanOrEqual(1);
+  it('wears the cars out over a season', () => {
+    let season = createSeason(config);
+    const before = season.teams.find((t) => t.teamId === 'kestros')!.parts.engine.condition;
+    while (!isSeasonComplete(season)) season = recordResult(season, runRound(season));
+    const after = season.teams.find((t) => t.teamId === 'kestros')!.parts.engine.condition;
+    expect(after).toBeLessThan(before);
   });
 
   it('develops the AI teams without touching the player', () => {
@@ -154,8 +166,8 @@ describe('development', () => {
     const developed = developAi(season);
     const playerBefore = season.teams.find((t) => t.teamId === 'kestros')!;
     const playerAfter = developed.teams.find((t) => t.teamId === 'kestros')!;
-    expect(playerAfter.carPerformance).toBe(playerBefore.carPerformance);
     expect(playerAfter.budget).toBe(playerBefore.budget);
+    expect(playerAfter.parts).toEqual(playerBefore.parts);
 
     const rivalBefore = season.teams.find((t) => t.teamId === 'corvid')!;
     const rivalAfter = developed.teams.find((t) => t.teamId === 'corvid')!;

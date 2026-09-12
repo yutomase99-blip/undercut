@@ -2,7 +2,6 @@ export * from './types.ts';
 export { POINTS, awardPoints } from './points.ts';
 export {
   SEASON_VERSION,
-  applyUpgrade,
   budgetFor,
   createSeason,
   developAi,
@@ -14,8 +13,27 @@ export {
   roundSeed,
   runRound,
   teamStandings,
-  upgradeOptions,
+  garageOptions,
+  applyGarageOption,
+  syncDerived,
+  wearField,
 } from './season.ts';
+export {
+  PART_IDS,
+  PART_LABEL,
+  PART_NOTE,
+  carPerformanceFrom,
+  fitPartsFor,
+  partCost,
+  reliabilityFrom,
+  repairPart,
+  runWear,
+  tyreWearFrom,
+  upgradePart,
+  type CarParts,
+  type Part,
+  type PartId,
+} from './parts.ts';
 export {
   autoPick,
   driverValue,
