@@ -28,6 +28,13 @@ export const ENDURANCE: Regulations = {
   cautions: { kind: 'fullCourseYellow', incidentRatePerLap: 0.0018 },
   // Endurance cars are built to survive and driven with that in mind.
   attritionScale: 0.35,
+  // Endurance qualifying is one session for everybody: the classes sort
+  // themselves out on pace, and nobody is knocked out of their own race.
+  qualifying: {
+    format: 'single',
+    slots: 10,
+    segments: [{ name: 'Qualifying', survivors: Number.MAX_SAFE_INTEGER }],
+  },
   refuelling: true,
 };
 

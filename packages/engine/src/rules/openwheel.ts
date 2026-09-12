@@ -14,6 +14,15 @@ export const OPEN_WHEEL: Regulations = {
   overtaking: { drsZones: 2, classDifferentialBonusMs: 0 },
   cautions: { kind: 'safetyCar', incidentRatePerLap: 0.0025 },
   attritionScale: 1,
+  qualifying: {
+    format: 'knockout',
+    slots: 12,
+    segments: [
+      { name: 'Q1', survivors: 15 },
+      { name: 'Q2', survivors: 10 },
+      { name: 'Q3', survivors: 10 },
+    ],
+  },
   refuelling: false,
 };
 

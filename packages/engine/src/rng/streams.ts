@@ -16,6 +16,7 @@ export const STREAM_NAMES = [
   'overtake',
   'incident',
   'strategy',
+  'qualifying',
 ] as const;
 
 export type StreamName = (typeof STREAM_NAMES)[number];

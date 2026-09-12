@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 110 tests, including a statistical balance suite
+npm test           # 139 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -104,6 +104,28 @@ A six-hour race at Vantor Ring, for reference:
 
 Around 6% of the field fails to finish, across ten or eleven stops and a driver
 change at every one.
+
+## Qualifying
+
+The grid is set by a session, not by a formula.
+
+Open-wheel runs a knockout — twenty cars down to fifteen, then ten, then a
+shootout for pole. Endurance runs one session and lets the classes sort
+themselves out on pace.
+
+You make one decision per segment, and it is a real one. The track rubbers in as
+the session goes on, so a late run is worth up to nine tenths — but everybody
+knows that, so the late windows are busy, and traffic gives the time back. Later
+windows are also likelier to be ended by a yellow flag, which deletes every lap
+set in them. The board shows the net time, how many cars are booked into each
+window, and the odds of the flags, so the gamble is informed rather than blind.
+
+**Whatever tyre you set your best time on in the final segment is the tyre you
+start the race on.** A lap on softs buys grid position and commits you to
+stopping early. That single rule is what makes qualifying part of the race
+rather than a prelude to it.
+
+A car whose lap is deleted starts at the back, whatever class it is in.
 
 ## The season
 

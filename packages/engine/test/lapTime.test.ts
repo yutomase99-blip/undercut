@@ -35,7 +35,16 @@ describe('lap time model', () => {
   it('sums its parts exactly', () => {
     const b = lap();
     const sum =
-      b.baseMs + b.classMs + b.carMs + b.driverMs + b.tyreMs + b.fuelMs + b.trafficMs + b.paceMs + b.errorMs;
+      b.baseMs +
+      b.classMs +
+      b.carMs +
+      b.driverMs +
+      b.tyreMs +
+      b.fuelMs +
+      b.trafficMs +
+      b.paceMs +
+      b.surfaceMs +
+      b.errorMs;
     expect(b.totalMs).toBeCloseTo(sum, 6);
   });
 
@@ -64,6 +73,12 @@ describe('lap time model', () => {
 
   it('adds the traffic loss it was given', () => {
     expect(lap({ trafficMs: 800 }).trafficMs).toBe(800);
+  });
+
+  it('is quicker on a rubbered-in surface', () => {
+    const green = lap({ surfaceMs: 0 });
+    const rubbered = lap({ surfaceMs: -700 });
+    expect(rubbered.totalMs).toBeCloseTo(green.totalMs - 700, 6);
   });
 
   it('scatters less for a consistent driver than an erratic one', () => {

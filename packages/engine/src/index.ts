@@ -7,6 +7,15 @@ export { COMPOUNDS, DRY_COMPOUNDS } from './content/compounds.ts';
 export { TRACKS, trackById } from './content/tracks.ts';
 export { TEAMS, DRIVERS, teamById, driverById, defaultGrid } from './content/grid.ts';
 export { createRace, simulate, MIN_GAP_MS, MANDATORY_PENALTY_MS, type Race } from './core/race.ts';
+export {
+  createQualifying,
+  runQualifying,
+  type Qualifying,
+  type QualifyingLap,
+  type QualifyingResult,
+  type QualifyingRun,
+  type QualifyingState,
+} from './core/qualifying.ts';
 export { computeLapTime, FUEL_MS_PER_KG } from './core/lapTime.ts';
 export { tyreDeltaMs, tyreConditionPct } from './core/tyres.ts';
 export { overtakeChance } from './core/overtake.ts';

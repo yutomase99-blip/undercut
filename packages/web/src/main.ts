@@ -8,6 +8,8 @@ import {
   type CompoundId,
   type Race,
   type RaceConfig,
+  type Entry,
+  type QualifyingResult,
   type RaceEvent,
   type RaceResult,
 } from '@undercut/engine';
@@ -15,6 +17,7 @@ import { createTrackMap, type MapCar } from './trackMap.ts';
 import { clock, COMPOUND_LOOK, gap, lapTime, WEATHER_LABEL } from './format.ts';
 import { CHAMPIONSHIPS, CLASS_COLOUR, CLASS_TAG, type Championship } from './championship.ts';
 import { renderSeasonHub, renderSeasonSetup, type SeasonDeps } from './seasonUi.ts';
+import { renderQualifying } from './qualifyingUi.ts';
 import {
   isSeasonComplete,
   loadSeason,
@@ -195,22 +198,48 @@ function renderSetup(): void {
   app.append(page);
 }
 
+/**
+ * Whoever reached the final segment starts on the tyre they set their best time
+ * on. It is the rule that makes qualifying part of the race rather than a
+ * prelude to it: a lap on softs buys grid position and commits you to stopping
+ * early.
+ */
+function applyQualifyingTyres(entries: Entry[], result: QualifyingResult): Entry[] {
+  return entries.map((entry) => {
+    const forced = result.startingCompounds.get(entry.carId);
+    return forced ? { ...entry, startingCompound: forced } : entry;
+  });
+}
+
 function startSingleRace(): void {
   const series = championship();
   const playerCarId = `${setup.teamId}-1`;
-  renderRace({
-    config: {
-      track: trackById(setup.trackId),
-      regulations: series.regulations(setup.length),
-      entries: series.grid(),
-      startingWeather: 'dry',
-      playerCarId,
-    },
+  const config = {
+    track: trackById(setup.trackId),
+    regulations: series.regulations(setup.length),
+    entries: series.grid(),
+    startingWeather: 'dry' as const,
+    playerCarId,
+  };
+
+  renderQualifying({
+    app,
+    config,
     seed: setup.seed,
     playerCarId,
-    multiClass: series.multiClass,
-    onFinish: () => renderSetup(),
-    finishLabel: 'Another race',
+    onComplete: (qualifying) =>
+      renderRace({
+        config: {
+          ...config,
+          entries: applyQualifyingTyres(config.entries, qualifying),
+          startingGrid: qualifying.grid,
+        },
+        seed: setup.seed,
+        playerCarId,
+        multiClass: series.multiClass,
+        onFinish: () => renderSetup(),
+        finishLabel: 'Another race',
+      }),
   });
 }
 
@@ -808,24 +837,39 @@ function startSeasonRound(season: SeasonState): void {
   const playerCarId = `${season.config.playerTeamId}-1`;
   const seed = roundSeed(season, round.round);
   const series = CHAMPIONSHIPS.find((c) => c.id === season.config.championshipId)!;
+  const config = raceConfigFor(season, playerCarId);
 
-  renderRace({
-    config: raceConfigFor(season, playerCarId),
+  const toRace = (qualifying: QualifyingResult) =>
+    renderRace({
+      config: {
+        ...config,
+        entries: applyQualifyingTyres(config.entries, qualifying),
+        startingGrid: qualifying.grid,
+      },
+      seed,
+      playerCarId,
+      multiClass: series.multiClass,
+      subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
+      finishLabel: 'Back to the season',
+      onFinish: (result) => {
+        const updated = recordResult(season, {
+          round: round.round,
+          trackId: round.trackId,
+          seed,
+          classification: result.classification,
+        });
+        saveSeason(updated);
+        renderSeasonHub(updated, seasonDeps);
+      },
+    });
+
+  renderQualifying({
+    app,
+    config,
     seed,
     playerCarId,
-    multiClass: series.multiClass,
     subtitle: `Round ${round.round + 1} of ${season.config.trackIds.length}`,
-    finishLabel: 'Back to the season',
-    onFinish: (result) => {
-      const updated = recordResult(season, {
-        round: round.round,
-        trackId: round.trackId,
-        seed,
-        classification: result.classification,
-      });
-      saveSeason(updated);
-      renderSeasonHub(updated, seasonDeps);
-    },
+    onComplete: toRace,
   });
 }
 

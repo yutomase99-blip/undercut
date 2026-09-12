@@ -39,5 +39,18 @@ export interface Regulations {
    * the field fails to finish.
    */
   attritionScale: number;
+  /**
+   * How the grid is decided.
+   *
+   * A knockout eliminates down to the survivors named by each segment; a
+   * single session runs everybody once and sorts them. `slots` is how many
+   * windows a session is divided into — running late means a rubbered-in track
+   * but a busier one.
+   */
+  qualifying: {
+    format: 'knockout' | 'single';
+    slots: number;
+    segments: { name: string; survivors: number }[];
+  };
   refuelling: boolean;
 }
