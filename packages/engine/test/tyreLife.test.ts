@@ -87,8 +87,19 @@ describe('in a race', () => {
   });
 
   it('reports a failure and puts the car back in the pits', () => {
+    // Softs on the circuit that punishes tyres most, for a distance far past
+    // anything they have in them — the situation that prompted all this.
     const playerCarId = defaultGrid()[0]!.carId;
-    const result = simulate({ ...sprint(50), playerCarId }, 'failure-report');
+    const result = simulate(
+      {
+        track: trackById('sable-dunes'),
+        regulations: openWheelOverLaps(50),
+        entries: defaultGrid().map((e) => ({ ...e, startingCompound: 'soft' as const })),
+        startingWeather: 'dry',
+        playerCarId,
+      },
+      'failure-report',
+    );
     const failure = result.events.find((e) => e.type === 'tyreFailure');
     expect(failure).toBeDefined();
     if (failure?.type !== 'tyreFailure') return;

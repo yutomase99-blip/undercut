@@ -115,16 +115,28 @@ describe('the race spends what is left', () => {
   it('refuses a compound the car has run out of', () => {
     const race = createRace(config(40), 'alloc-r3');
     const carId = defaultGrid()[0]!.carId;
-    let allocation = race.allocationOf(carId);
-    const softs = countSets(allocation, 'soft');
-    for (let i = 0; i < softs + 3; i += 1) {
+    const softs = countSets(race.allocationOf(carId), 'soft');
+
+    // Keep asking for softs. Each stop takes a lap to reach and time to serve,
+    // so the race has to be driven rather than stepped an instruction at a time.
+    let guard = 0;
+    while (countSets(race.allocationOf(carId), 'soft') > 0 && guard < 40 && !race.isFinished()) {
       race.issue({ type: 'pit', car: carId, compound: 'soft' });
       race.tick();
+      guard += 1;
     }
-    allocation = race.allocationOf(carId);
-    expect(countSets(allocation, 'soft')).toBe(0);
-    const car = race.state().cars.find((c) => c.id === carId)!;
-    expect(car.compound).not.toBe('soft');
+    expect(countSets(race.allocationOf(carId), 'soft')).toBe(0);
+    expect(softs).toBeGreaterThan(0);
+
+    // With none left, the next call for softs is served with something else.
+    race.issue({ type: 'pit', car: carId, compound: 'soft' });
+    guard = 0;
+    const before = race.state().cars.find((c) => c.id === carId)!.pitStops;
+    while (guard < 4 && race.state().cars.find((c) => c.id === carId)!.pitStops === before) {
+      race.tick();
+      guard += 1;
+    }
+    expect(race.state().cars.find((c) => c.id === carId)!.compound).not.toBe('soft');
   });
 
   it('never leaves a car unable to stop at all', () => {

@@ -163,6 +163,10 @@ export interface CarState {
   stintSeconds: number;
   /** Everyone who has driven this car so far, in order. */
   driversUsed: DriverId[];
+  /** How far round the race this car is, in laps. Fractional and continuous. */
+  distance: number;
+  /** True while the car is standing in its pit box. */
+  inPit: boolean;
   /** True once this car has taken the flag. */
   finished: boolean;
   /** Time penalties earned, in seconds, added to the race at the flag. */
@@ -193,20 +197,27 @@ export type Command =
   | { type: 'pit'; car: CarId; compound: CompoundId; driverChange?: DriverId }
   | { type: 'pace'; car: CarId; mode: PaceMode };
 
+/**
+ * Something that happened, and when.
+ *
+ * `atMs` is race time. Events used to carry only the lap they fell on, which
+ * was all the resolution there was; now that a race runs on a clock, an
+ * overtake happened at a moment and can be shown at it.
+ */
 export type RaceEvent =
-  | { lap: number; type: 'raceStart'; weather: WeatherState }
-  | { lap: number; type: 'lapCompleted'; car: CarId; lapTimeMs: number; position: number }
-  | { lap: number; type: 'overtake'; car: CarId; victim: CarId; success: boolean }
-  | { lap: number; type: 'pitStop'; car: CarId; compound: CompoundId; stationaryMs: number }
-  | { lap: number; type: 'caution'; phase: 'deployed' | 'ending' }
-  | { lap: number; type: 'weather'; from: WeatherState; to: WeatherState }
-  | { lap: number; type: 'retirement'; car: CarId; cause: RetirementCause }
-  | { lap: number; type: 'driverChange'; car: CarId; from: DriverId; to: DriverId }
-  | { lap: number; type: 'tyreFailure'; car: CarId; compound: CompoundId; ageLaps: number }
-  | { lap: number; type: 'warning'; car: CarId; count: number }
-  | { lap: number; type: 'penalty'; car: CarId; reason: PenaltyReason; seconds: number }
-  | { lap: number; type: 'radio'; car: CarId; message: string }
-  | { lap: number; type: 'chequeredFlag'; winner: CarId };
+  | { lap: number; atMs: number; type: 'raceStart'; weather: WeatherState }
+  | { lap: number; atMs: number; type: 'lapCompleted'; car: CarId; lapTimeMs: number; position: number }
+  | { lap: number; atMs: number; type: 'overtake'; car: CarId; victim: CarId; success: boolean }
+  | { lap: number; atMs: number; type: 'pitStop'; car: CarId; compound: CompoundId; stationaryMs: number }
+  | { lap: number; atMs: number; type: 'caution'; phase: 'deployed' | 'ending' }
+  | { lap: number; atMs: number; type: 'weather'; from: WeatherState; to: WeatherState }
+  | { lap: number; atMs: number; type: 'retirement'; car: CarId; cause: RetirementCause }
+  | { lap: number; atMs: number; type: 'driverChange'; car: CarId; from: DriverId; to: DriverId }
+  | { lap: number; atMs: number; type: 'tyreFailure'; car: CarId; compound: CompoundId; ageLaps: number }
+  | { lap: number; atMs: number; type: 'warning'; car: CarId; count: number }
+  | { lap: number; atMs: number; type: 'penalty'; car: CarId; reason: PenaltyReason; seconds: number }
+  | { lap: number; atMs: number; type: 'radio'; car: CarId; message: string }
+  | { lap: number; atMs: number; type: 'chequeredFlag'; winner: CarId };
 
 export interface Classification {
   position: number;
