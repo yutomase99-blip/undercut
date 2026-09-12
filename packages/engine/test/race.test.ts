@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRace, simulate } from '../src/core/race.ts';
-import { defaultGrid } from '../src/content/grid.ts';
+import { defaultGrid, TEAMS, teamById } from '../src/content/grid.ts';
 import { trackById } from '../src/content/tracks.ts';
 import { openWheelOverLaps } from '../src/rules/openwheel.ts';
 import type { RaceConfig } from '../src/types.ts';
@@ -111,5 +111,38 @@ describe('race simulation', () => {
     const result = simulate(config(20, 'wet'), 'race-11');
     expect(result.classification).toHaveLength(defaultGrid().length);
     expect(result.events.some((e) => e.type === 'chequeredFlag')).toBe(true);
+  });
+});
+
+describe('roster overrides', () => {
+  it('races the stats it is given rather than the registered ones', () => {
+    const grid = defaultGrid();
+    const base = simulate(config(20), 'override-base');
+
+    // Hand the slowest team a car a second a lap quicker than anyone else's.
+    const boosted = TEAMS.map((team) =>
+      team.id === 'corvid' ? { ...team, carPerformance: 1, reliability: 1 } : team,
+    );
+    const withOverride = simulate(
+      { ...config(20), roster: { teams: boosted } },
+      'override-base',
+    );
+
+    const corvidBefore = base.classification.find((c) => c.teamId === 'corvid')!.position;
+    const corvidAfter = withOverride.classification.find((c) => c.teamId === 'corvid')!.position;
+    expect(corvidAfter).toBeLessThan(corvidBefore);
+    expect(withOverride.classification).toHaveLength(grid.length);
+  });
+
+  it('leaves the registered content untouched', () => {
+    const before = teamById('corvid').carPerformance;
+    simulate(
+      {
+        ...config(10),
+        roster: { teams: [{ ...teamById('corvid'), carPerformance: 1 }] },
+      },
+      'override-purity',
+    );
+    expect(teamById('corvid').carPerformance).toBe(before);
   });
 });

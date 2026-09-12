@@ -220,4 +220,14 @@ export interface RaceConfig {
   startingWeather: WeatherState;
   /** The car the player calls strategy for. AI handles every other car. */
   playerCarId?: CarId | null;
+  /**
+   * Team and driver stats to use for this race instead of the registered
+   * content.
+   *
+   * A championship develops cars between rounds, so the same team is a
+   * different machine in August than it was in March. Passing the roster in
+   * keeps that a property of the race being run rather than a mutation of
+   * shared content, which would leak between races.
+   */
+  roster?: { teams?: Team[]; drivers?: Driver[] };
 }

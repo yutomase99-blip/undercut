@@ -11,7 +11,7 @@ something, and the race tells you afterwards whether you were right.
 ```bash
 npm install
 npm run dev        # play it in the browser
-npm test           # 71 tests, including a statistical balance suite
+npm test           # 110 tests, including a statistical balance suite
 npm run race       # run an open-wheel race headlessly
 npm run endurance  # run a six-hour, three-class race headlessly
 npm run balance    # simulate the calendar and report who actually wins
@@ -28,9 +28,12 @@ Two championships share one engine:
 ```
 packages/
   engine/   the simulation: pure TypeScript, zero runtime dependencies
+  season/   the championship: standings, development, contracts, saves
   web/      the pit wall: canvas track map, live timing tower, strategy controls
   cli/      headless tools: single races and balance reports
 ```
+
+Play a single race, or take a team through a season.
 
 ## The engine
 
@@ -102,8 +105,29 @@ A six-hour race at Vantor Ring, for reference:
 Around 6% of the field fails to finish, across ten or eleven stops and a driver
 change at every one.
 
-Next is the season layer: a championship across the calendar, car development
-between races, and contracts.
+## The season
+
+A championship runs a calendar, and between rounds you spend a development
+budget on the car. So does everybody else.
+
+Two things keep a season from being decided in March. The development budget
+**slides against performance** — the team at the back gets appreciably more to
+spend than the champion — and an upgrade's gain scales with the **headroom** a
+rating has left, so the same work is worth more to a poor car than a good one.
+Without both, the fastest car compounds its advantage and the title is settled
+by round three of year two.
+
+At the end of the year the drivers change seats. Teams choose in championship
+order, one seat at a time, so the champion gets first pick of lead drivers but
+cannot simply take the two best people on the grid before anyone else speaks.
+Cars keep everything they were developed into; budgets are handed out afresh.
+
+Seasons are saved to the browser, with a versioned schema — a save from an
+older build is declined rather than loaded into a shape it no longer fits.
+
+The season layer never touches the engine's content. A developed car is passed
+into the race as a roster override, so the catalogue a season started from is
+still there when the next one begins.
 
 ## Content
 
