@@ -896,7 +896,7 @@ function renderRace(options: RaceOptions): void {
   const MIN_CHIP_SEPARATION = 0.011;
 
   function mapCars(state: ReturnType<Race['state']>): MapCar[] {
-    const running = state.cars.filter((car) => !car.retired && !car.inPit);
+    const running = state.cars.filter((car) => !car.retired);
 
     // Cars are placed around the lap by their gap to the leader, so the map
     // tells the same story as the timing tower. On the opening laps the whole
@@ -915,6 +915,7 @@ function renderRace(options: RaceOptions): void {
         position: car.position,
         fraction: spaced,
         isPlayer: car.id === playerCarId,
+        inPit: car.inPit,
       };
     });
   }
