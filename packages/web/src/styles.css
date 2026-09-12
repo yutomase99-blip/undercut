@@ -570,3 +570,7 @@ input[type='text'], input[type='number'] {
 .forecast__lap { font-size: 10px; color: var(--dimmer); }
 .forecast__state { font-size: 11px; font-weight: 700; }
 .forecast__confidence { font-size: 9px; color: var(--dimmer); }
+
+/* Sets remaining, against a compound. */
+.chip__sets { font-size: 11px; color: var(--dim); margin-left: 5px; }
+.chip:disabled .chip__sets { color: var(--dimmer); }

@@ -35,6 +35,8 @@ export interface StrategyView {
   forecastLookahead: number;
   /** How sure this team insists on being before acting on one. */
   forecastTrust: number;
+  /** Compounds this car still has a set of. */
+  available: CompoundId[];
   regulations: Regulations;
   rng: Rng;
 }
@@ -68,8 +70,16 @@ export function plannedStint(compound: CompoundId, wearFactor: number, rng: Rng)
 /** Picks the next set: something legal, suited to the weather, and ideally new. */
 export function chooseCompound(view: StrategyView, forWeather?: WeatherState): CompoundId {
   const weather = forWeather ?? view.weather;
-  const suited = suitableCompounds(weather).filter((c) =>
-    view.regulations.tyreRules.allowedCompounds.includes(c),
+  // Only what is actually in the garage. Planning around a set the car used in
+  // qualifying is how a strategy falls apart in the pit lane.
+  const inStock = (compounds: CompoundId[]) => {
+    const stocked = compounds.filter((c) => view.available.includes(c));
+    return stocked.length > 0 ? stocked : compounds;
+  };
+  const suited = inStock(
+    suitableCompounds(weather).filter((c) =>
+      view.regulations.tyreRules.allowedCompounds.includes(c),
+    ),
   );
   if (weather !== 'dry') return suited[0] ?? 'intermediate';
 

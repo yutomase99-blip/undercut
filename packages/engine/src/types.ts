@@ -237,4 +237,9 @@ export interface RaceConfig {
    * to a single abstracted qualifying lap per car.
    */
   startingGrid?: CarId[];
+  /**
+   * What each car has left in the garage after qualifying. Without it every car
+   * starts the race on a full allocation.
+   */
+  tyreSets?: Map<CarId, Record<CompoundId, number>>;
 }

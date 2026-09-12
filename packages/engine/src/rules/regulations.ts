@@ -17,6 +17,14 @@ export interface Regulations {
     mandatoryCompoundChange: boolean;
     allowedCompounds: CompoundId[];
   };
+  /**
+   * Sets of each compound a car has for the whole weekend.
+   *
+   * Qualifying and the race draw from the same pot, which is what gives a
+   * qualifying run a price: a lap on softs for grid position is a set you no
+   * longer have on Sunday.
+   */
+  tyreAllocation: Record<CompoundId, number>;
   stints: {
     /** null when a single driver may run the whole race. */
     maxDriverStintSeconds: number | null;
